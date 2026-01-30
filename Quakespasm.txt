@@ -218,6 +218,76 @@
   See: https://github.com/ololoken/ems-runner-quakespasm for a launcher.
 
 
+  Compiling with CMake:
+
+  QuakeSpasm includes CMake support as an alternative to the traditional
+  Makefiles. CMake is cross-platform and works on Linux, Windows, and macOS.
+  A CMakePresets.json file is provided with pre-configured build presets.
+
+  Requirements:
+  -  CMake 3.16 or newer (3.21+ for preset support)
+  -  Ninja build system (recommended, used by presets)
+  -  On Windows: Visual Studio with MSVC, or MinGW-w64
+
+  Using CMake Presets (recommended):
+
+  List available presets:
+    cmake --list-presets
+
+  Linux (GCC):
+    cmake --preset release
+    cmake --build --preset release
+
+  Linux (Clang):
+    cmake --preset clang-release
+    cmake --build --preset clang-release
+
+  Windows (MSVC x64, run from Developer Command Prompt):
+    cmake --preset msvc-x64-release
+    cmake --build --preset msvc-x64-release
+
+  Windows (MSVC x86, run from Developer Command Prompt):
+    cmake --preset msvc-x86-release
+    cmake --build --preset msvc-x86-release
+
+  Windows (MinGW-w64):
+    cmake --preset mingw-x64-release
+    cmake --build --preset mingw-x64-release
+
+  For debug builds, replace "release" with "debug" in the preset names.
+
+  Manual CMake Usage (without presets):
+
+  Linux:
+    mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+    make -j$(nproc)
+
+  Windows (MSVC):
+    mkdir build && cd build
+    cmake .. -G "Visual Studio 17 2022" -A x64
+    cmake --build . --config Release
+
+  Windows (MinGW):
+    mkdir build && cd build
+    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+    mingw32-make
+
+  CMake Build Options:
+
+  -  -DUSE_SDL2=ON/OFF - Use SDL2 (default: ON)
+  -  -DDO_USERDIRS=ON/OFF - Enable user directories (default: OFF)
+  -  -DUSE_CODEC_VORBIS=ON/OFF - Vorbis audio support (default: ON)
+  -  -DUSE_CODEC_FLAC=ON/OFF - FLAC audio support
+  -  -DUSE_CODEC_MP3=ON/OFF - MP3 audio support
+  -  -DUSE_CODEC_OPUS=ON/OFF - Opus audio support
+  -  -DMP3LIB=mad/mpg123 - MP3 decoder library (default: mad)
+  -  -DVORBISLIB=vorbis/tremor - Vorbis decoder library (default: vorbis)
+
+  Build output is placed in the "out" directory when using presets, or in
+  your specified build directory when using manual CMake commands.
+
+
   Quake '2021 re-release':
 
   QuakeSpasm 0.94 has support for playing the 2021 re-release content:
