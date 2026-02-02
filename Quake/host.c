@@ -26,6 +26,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "bgmusic.h"
 #include <setjmp.h>
 
+#ifdef USE_ACCELBYTE_GAMESDK
+#include "ABIntegration/ab_integration.h"
+#endif
+
 /*
 
 A server can allways be started, even if the system started out as a client
@@ -771,6 +775,10 @@ void _Host_Frame (float time)
 					pass1+pass2+pass3, pass1, pass2, pass3);
 	}
 
+#ifdef USE_ACCELBYTE_GAMESDK
+	AB_Update ();
+#endif
+
 	host_framecount++;
 
 }
@@ -862,6 +870,9 @@ void Host_Init (void)
 		V_Init ();
 		Chase_Init ();
 		M_Init ();
+#ifdef USE_ACCELBYTE_GAMESDK
+		AB_Init ();
+#endif
 		ExtraMaps_Init (); //johnfitz
 		Modlist_Init (); //johnfitz
 		DemoList_Init (); //ericw
@@ -923,6 +934,10 @@ void Host_Shutdown(void)
 		return;
 	}
 	isdown = true;
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	AB_Shutdown ();
+#endif
 
 // keep Con_Printf from trying to update the screen
 	scr_disabled_for_loading = true;

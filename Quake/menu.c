@@ -23,6 +23,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "bgmusic.h"
 
+#ifdef USE_ACCELBYTE_GAMESDK
+#include "ABIntegration/ab_integration.h"
+static qboolean ab_login_triggered = false;
+#endif
+
 void (*vid_menucmdfn)(void); //johnfitz
 void (*vid_menudrawfn)(void);
 void (*vid_menukeyfn)(int key);
@@ -243,6 +248,15 @@ int	m_main_cursor;
 
 void M_Menu_Main_f (void)
 {
+#ifdef USE_ACCELBYTE_GAMESDK
+	/* Trigger AccelByte login on first main menu entry */
+	if (!ab_login_triggered)
+	{
+		ab_login_triggered = true;
+		AB_LoginWithDeviceId();
+	}
+#endif
+
 	if (key_dest != key_menu)
 	{
 		m_save_demonum = cls.demonum;

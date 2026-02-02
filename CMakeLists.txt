@@ -18,7 +18,7 @@
 #     mingw32-make
 
 cmake_minimum_required(VERSION 3.16)
-project(QuakeSpasm VERSION 0.97.0 LANGUAGES C)
+project(QuakeSpasm VERSION 0.97.0 LANGUAGES C CXX)
 
 # ------------------------------------------------------------------------------
 # Build Options
@@ -49,6 +49,9 @@ else()
     option(USE_CODEC_MODPLUG "Enable ModPlug audio codec" OFF)
     option(USE_CODEC_UMX "Enable UMX audio codec" OFF)
 endif()
+
+# AccelByte GameSDK
+option(USE_ACCELBYTE_GAMESDK "Enable AccelByte GameSDK integration" ON)
 
 # Library selection for MP3 and Vorbis
 set(MP3LIB "mad" CACHE STRING "MP3 decoder library (mad or mpg123)")
@@ -192,11 +195,22 @@ else()
     )
 endif()
 
+# AccelByte Integration sources (C++)
+if(USE_ACCELBYTE_GAMESDK)
+    set(AB_INTEGRATION_SOURCES
+        ${QUAKE_DIR}/ABIntegration/ab_integration.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
+    )
+endif()
+
 # ------------------------------------------------------------------------------
 # Create Executable
 # ------------------------------------------------------------------------------
 
 set(ALL_SOURCES ${COMMON_SOURCES} ${PLATFORM_SOURCES})
+if(USE_ACCELBYTE_GAMESDK AND AB_INTEGRATION_SOURCES)
+    list(APPEND ALL_SOURCES ${AB_INTEGRATION_SOURCES})
+endif()
 
 if(WIN32)
     # Add Windows resource file for application icon
@@ -289,6 +303,20 @@ endif()
 # OpenGL
 find_package(OpenGL REQUIRED)
 target_link_libraries(quakespasm PRIVATE OpenGL::GL)
+
+# AccelByte GameSDK
+if(USE_ACCELBYTE_GAMESDK)
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk")
+    find_package(accelbyte-gamesdk REQUIRED)
+    target_link_libraries(quakespasm PRIVATE
+        accelbyte-gamesdk::user
+        accelbyte-gamesdk::lobby
+        accelbyte-gamesdk::settings
+        abcnl::curl_http_executor
+    )
+    target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
+    target_compile_features(quakespasm PRIVATE cxx_std_20)
+endif()
 
 # Platform-specific libraries
 if(WIN32)
@@ -633,6 +661,45 @@ if(WIN32)
             COMMENT "Copying ${DLL} to output directory"
         )
     endforeach()
+
+    # Copy AccelByte GameSDK DLLs
+    if(USE_ACCELBYTE_GAMESDK)
+        set(ACCELBYTE_DLL_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/bin)
+
+        # Core SDK DLLs (user, lobby, settings and their dependencies)
+        set(ACCELBYTE_DLLS
+            # Main SDK components
+            accelbyte-gamesdk-user.dll
+            accelbyte-gamesdk-lobby.dll
+            accelbyte-gamesdk-settings.dll
+            accelbyte-gamesdk-crypto.dll
+            accelbyte-gamesdk-common.dll
+            # Required abcnl dependencies
+            abcnl-common.dll
+            abcnl-memory.dll
+            abcnl-http.dll
+            abcnl-utils.dll
+            abcnl-tls.dll
+            abcnl-platform_connection.dll
+            abcnl-web_socket.dll
+            abcnl-cpp_web_socket.dll
+            abcnl-curl_http_executor.dll
+            abcnl-iam.dll
+            abcnl-lobby.dll
+            abcnl-codegen_common.dll
+        )
+
+        foreach(DLL ${ACCELBYTE_DLLS})
+            if(EXISTS "${ACCELBYTE_DLL_DIR}/${DLL}")
+                add_custom_command(TARGET quakespasm POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${ACCELBYTE_DLL_DIR}/${DLL}"
+                        $<TARGET_FILE_DIR:quakespasm>
+                    COMMENT "Copying ${DLL} to output directory"
+                )
+            endif()
+        endforeach()
+    endif()
 endif()
 
 # ------------------------------------------------------------------------------
@@ -648,8 +715,9 @@ message(STATUS "C Compiler:      ${CMAKE_C_COMPILER}")
 message(STATUS "Install prefix:  ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "")
 message(STATUS "Options:")
-message(STATUS "  USE_SDL2:      ${USE_SDL2}")
-message(STATUS "  DO_USERDIRS:   ${DO_USERDIRS}")
+message(STATUS "  USE_SDL2:            ${USE_SDL2}")
+message(STATUS "  DO_USERDIRS:         ${DO_USERDIRS}")
+message(STATUS "  USE_ACCELBYTE_GAMESDK: ${USE_ACCELBYTE_GAMESDK}")
 message(STATUS "")
 message(STATUS "Audio Codecs:")
 message(STATUS "  WAVE:          ${USE_CODEC_WAVE}")
