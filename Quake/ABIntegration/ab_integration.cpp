@@ -16,6 +16,9 @@
 #include <accelbyte/iam/models/LoginQueueTicket.h>
 #include <accelbyte/curl_http_executor/CurlRequestExecutorFactory.h>
 #include <accelbyte/http/RequestExecutorFactory.h>
+#include <accelbyte/social/UserStatistic.h>
+#include <accelbyte/social/user_statistic/UpdateUserStatItemValueV2.h>
+#include <accelbyte/social/models/UpdateStatItem.h>
 #include "ab_task_runner.h"
 
 // Standard library
@@ -288,7 +291,7 @@ void AB_LoginWithDeviceId(void)
         std::lock_guard<std::mutex> lock(g_mutex);
         g_login_status = AB_LOGIN_IN_PROGRESS;
     }
-
+    
     g_dummy_future = std::async(std::launch::async, [params](){
         accelbyte::user::UserLogin::login_with_device_id(
         params,
@@ -367,9 +370,73 @@ const char* AB_GetErrorMessage(void)
     return NULL;
 }
 
+void AB_UpdateUserStatItemValue(const char* stat_code, float value, int strategy)
+{
+    if (!g_initialized)
+    {
+        Con_Printf("AccelByte: SDK not initialized\n");
+        return;
+    }
+
+    if (!stat_code || !stat_code[0])
+    {
+        Con_Printf("AccelByte: stat_code is empty\n");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (g_login_status != AB_LOGIN_SUCCESS || !g_current_user)
+    {
+        Con_Printf("AccelByte: Not logged in, cannot update stat\n");
+        return;
+    }
+
+    using UpdateStrategy = accelbyte::social::model::UpdateStatItem::UpdateStrategy;
+    UpdateStrategy update_strategy;
+    switch (strategy)
+    {
+    case 0:  update_strategy = UpdateStrategy::OVERRIDE;  break;
+    case 1:  update_strategy = UpdateStrategy::INCREMENT;  break;
+    case 2:  update_strategy = UpdateStrategy::MAX;        break;
+    case 3:  update_strategy = UpdateStrategy::MIN;        break;
+    default:
+        Con_Printf("AccelByte: Invalid strategy %d (use 0=OVERRIDE, 1=INCREMENT, 2=MAX, 3=MIN)\n", strategy);
+        return;
+    }
+
+    accelbyte::social::user_statistic::UpdateUserStatItemValueV2 request;
+    request.stat_code = stat_code;
+    request.user_id = g_user_id.c_str();
+    request.body.update_strategy = update_strategy;
+    request.body.value = value;
+
+    const accelbyte::tls::SecurityAuthorization& authorization = *g_current_user;
+
+    std::string stat_code_copy(stat_code);
+
+    accelbyte::social::UserStatistic::update_user_stat_item_value_v2(
+        authorization,
+        request,
+        [stat_code_copy](const accelbyte::social::model::StatItemInc& result) {
+            Con_Printf("AccelByte: Stat '%s' updated, current value: %f\n",
+                stat_code_copy.c_str(), result.current_value);
+        },
+        [stat_code_copy](const accelbyte::Error& error) {
+            Con_Printf("AccelByte: Failed to update stat '%s' - %s\n",
+                stat_code_copy.c_str(), error.what().c_str());
+        }
+    );
+}
+
 int AB_IsInitialized(void)
 {
     return g_initialized ? 1 : 0;
+}
+
+void* get_current_user(void)
+{
+    return nullptr;
 }
 
 } // extern "C"

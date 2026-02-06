@@ -68,9 +68,20 @@ const char* AB_GetDisplayName(void);
 const char* AB_GetErrorMessage(void);
 
 /*
+ * Update a user stat item value.
+ * Calls AccelByte's update_user_stat_item_value_v2.
+ * stat_code: the stat code identifier (e.g., "kills", "headshots")
+ * value: the value to apply
+ * strategy: 0 = OVERRIDE, 1 = INCREMENT, 2 = MAX, 3 = MIN
+ */
+void AB_UpdateUserStatItemValue(const char* stat_code, float value, int strategy);
+
+/*
  * Check if SDK is initialized
  */
 int AB_IsInitialized(void);
+
+void* get_current_user(void);
 
 #ifdef __cplusplus
 }

@@ -312,6 +312,7 @@ if(USE_ACCELBYTE_GAMESDK)
         accelbyte-gamesdk::user
         accelbyte-gamesdk::lobby
         accelbyte-gamesdk::settings
+        abcnl-codegen::social
         abcnl::curl_http_executor
     )
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
