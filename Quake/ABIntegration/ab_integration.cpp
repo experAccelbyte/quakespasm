@@ -269,7 +269,6 @@ void AB_LoginWithDeviceId(void)
     if (!client_secret || !client_secret[0])
     {
         Con_Printf("AccelByte: ab_client_secret not configured\n");
-        return;
     }
 
     // Configure settings
