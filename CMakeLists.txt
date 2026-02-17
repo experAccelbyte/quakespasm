@@ -308,6 +308,14 @@ target_link_libraries(quakespasm PRIVATE OpenGL::GL)
 if(USE_ACCELBYTE_GAMESDK)
     list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk")
     find_package(accelbyte-gamesdk REQUIRED)
+
+    # Find the cpp_web_socket library
+    find_library(ACCELBYTE_CPP_WEBSOCKET_LIB
+        NAMES abcnl-cpp_web_socket
+        PATHS "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/lib"
+        NO_DEFAULT_PATH
+    )
+
     target_link_libraries(quakespasm PRIVATE
         accelbyte-gamesdk::user
         accelbyte-gamesdk::lobby
@@ -315,6 +323,14 @@ if(USE_ACCELBYTE_GAMESDK)
         abcnl-codegen::social
         abcnl::curl_http_executor
     )
+
+    # Link cpp_web_socket library if found
+    if(ACCELBYTE_CPP_WEBSOCKET_LIB)
+        target_link_libraries(quakespasm PRIVATE ${ACCELBYTE_CPP_WEBSOCKET_LIB})
+    else()
+        message(WARNING "AccelByte cpp_web_socket library not found, lobby connections may fail")
+    endif()
+
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
     target_compile_features(quakespasm PRIVATE cxx_std_20)
 endif()
@@ -675,6 +691,8 @@ if(WIN32)
             accelbyte-gamesdk-settings.dll
             accelbyte-gamesdk-crypto.dll
             accelbyte-gamesdk-common.dll
+            accelbyte-gamesdk-chat.dll
+            accelbyte-gamesdk-p2p_connection.dll
             # Required abcnl dependencies
             abcnl-common.dll
             abcnl-memory.dll
@@ -688,6 +706,40 @@ if(WIN32)
             abcnl-iam.dll
             abcnl-lobby.dll
             abcnl-codegen_common.dll
+            abcnl-codegen_test_tools.dll
+            abcnl-debug_handler.dll
+            abcnl-debug_http_executor.dll
+            abcnl-achievement.dll
+            abcnl-cloudsave.dll
+            abcnl-audit.dll
+            abcnl-session.dll
+            abcnl-match2.dll
+            abcnl-basic.dll
+            abcnl-challenge.dll
+            abcnl-group.dll
+            abcnl-chat.dll
+            abcnl-turn_manager.dll
+            abcnl-social.dll
+            abcnl-ugc.dll
+            abcnl-leaderboard.dll
+            abcnl-platform.dll
+            abcnl-logger.dll
+            abcnl-network_utility.dll
+            abcnl-network_debug_output.dll
+            abcnl-p2p_connection.dll
+            abcnl-libjuice_p2p_connection.dll
+            abcnl-windows_network_utility.dll
+            abcnl-xbox_connection.dll
+            abcnl-inventory.dll
+            abcnl-legal.dll
+            abcnl-reporting.dll
+            abcnl-seasonpass.dll
+            abcnl-test_utils.dll
+            abcnl-ehs.dll
+            abcnl-file_debug_output.dll
+            abcnl-gametelemetry.dll
+            abcnl-gdpr.dll
+            abcnl-login_queue.dll
         )
 
         foreach(DLL ${ACCELBYTE_DLLS})
