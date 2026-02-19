@@ -279,11 +279,6 @@ cmake --build --preset release
 cd Quake
 make USE_SDL2=1
 ```
-
-### Quick Start (Visual Studio)
-
-Open `Windows/VisualStudio/quakespasm.sln` in Visual Studio 2017 or newer.
-
 ### Dependencies
 
 **Required:**
@@ -331,6 +326,7 @@ make DEBUG=1 USE_SDL2=1
 * `Quakespasm-Music.txt` - Music playback documentation
 * `LICENSE.txt` - GNU GPL v2 license
 * `Misc/fitzquake*.txt` - Historical FitzQuake documentation (reference for inherited features)
+* `.claude\plans\matchmaking-recording-plan.md` - specifics for creating a step by step recording adding accelbyte matchmaking to the project
 
 ### External Resources
 
@@ -375,3 +371,8 @@ When completing tasks:
 | Music playback | `bgmusic.c`, `snd_*.c` (codecs) |
 
 ---
+
+## Current Goal
+The current goal for this project is to create a recording of step by step adding accelbyte matchmaking to quake. 
+The steps and script are outlined in .claude\plans\matchmaking-recording-plan.md and I will be prompting them one at a time.
+Re-read that document (.claude\plans\matchmaking-recording-plan.md) each time after compacting the context.
