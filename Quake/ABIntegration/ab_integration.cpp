@@ -19,6 +19,15 @@
 #include <accelbyte/social/UserStatistic.h>
 #include <accelbyte/social/user_statistic/UpdateUserStatItemValueV2.h>
 #include <accelbyte/social/models/UpdateStatItem.h>
+
+// Lobby and WebSocket headers
+#include <accelbyte/lobby/Lobby.h>
+#include <accelbyte/lobby/LobbyConnection.h>
+#include <accelbyte/cpp_web_socket/CppWebSocketFactory.h>
+#include <accelbyte/web_socket/WebSocketFactory.h>
+
+// Session headers
+#include <accelbyte/session/SessionService.h>
 #include "ab_task_runner.h"
 
 // Standard library
@@ -66,6 +75,10 @@ static accelbyte::memory::SharedPtr<accelbyte::user::User> g_current_user;
 
 // Settings instance
 static accelbyte::settings::InMemorySettings g_settings;
+
+// Lobby state
+static std::shared_ptr<accelbyte::lobby::Lobby> g_lobby;
+static accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> g_lobby_connection;
 
 static ABTaskRunner runner;
 //------------------------------------------------------------------------------
@@ -156,18 +169,51 @@ static std::string GenerateDeviceId()
 //------------------------------------------------------------------------------
 static void OnLoginSuccess(const accelbyte::memory::SharedPtr<accelbyte::user::User> user)
 {
-    std::lock_guard<std::mutex> lock(g_mutex);
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
 
-    g_current_user = user;
-    g_user_id = user->user_id().c_str();
-    g_display_name = user->display_name().c_str();
-    g_login_status = AB_LOGIN_SUCCESS;
-    g_queue_ticket = nullptr;
+        g_current_user = user;
+        g_user_id = user->user_id().c_str();
+        g_display_name = user->display_name().c_str();
+        g_login_status = AB_LOGIN_SUCCESS;
+        g_queue_ticket = nullptr;
+    }
 
     runner.queue_task([](const accelbyte::String& access_token){
         Con_Printf("AccelByte: Login successful! Token: %s\n", access_token.c_str());
     }, user->credential()->access_token().value());
-    // Con_Printf("AccelByte: Login successful! User: %s\n", g_display_name);
+
+    // Connect to lobby WebSocket
+    try
+    {
+        auto lobby = std::make_shared<accelbyte::lobby::Lobby>();
+        auto connection = lobby->create_connection(*user);
+
+        bool connected = connection->connect();
+
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (connected)
+        {
+            g_lobby = lobby;
+            g_lobby_connection = connection;
+            runner.queue_task([](){
+                Con_Printf("AccelByte: Connected to lobby successfully\n");
+            });
+        }
+        else
+        {
+            runner.queue_task([](){
+                Con_Printf("AccelByte: Failed to connect to lobby\n");
+            });
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::string err = e.what();
+        runner.queue_task([err](){
+            Con_Printf("AccelByte: Lobby connection error: %s\n", err.c_str());
+        });
+    }
 }
 
 static void OnLoginQueued(const accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket)
@@ -216,9 +262,15 @@ void AB_Init(void)
     Con_Printf("AccelByte: Device ID: %s\n", g_device_id.c_str());
 
     g_initialized = true;
-        // CURL HTTP EXECUTOR
+
+    // CURL HTTP EXECUTOR
     auto curlExecutor = std::make_shared<accelbyte::http::CurlRequestExecutorFactory>();
     accelbyte::http::RequestExecutorFactory::set_executor_factory(curlExecutor);
+
+    // WebSocket factory — needed for lobby connections
+    auto wsFactory = accelbyte::memory::make_shared_ptr<accelbyte::cpp_web_socket::CppWebSocketFactory>();
+    accelbyte::web_socket::WebSocketFactory::set_web_socket_factory(wsFactory);
+    Con_Printf("AccelByte: WebSocket factory registered\n");
 }
 
 void AB_Shutdown(void)
@@ -229,6 +281,15 @@ void AB_Shutdown(void)
     }
 
     std::lock_guard<std::mutex> lock(g_mutex);
+
+    // Disconnect lobby
+    if (g_lobby_connection)
+    {
+        g_lobby_connection->disconnect();
+        g_lobby_connection = nullptr;
+        Con_Printf("AccelByte: Lobby disconnected\n");
+    }
+    g_lobby = nullptr;
 
     g_current_user = nullptr;
     g_queue_ticket = nullptr;
@@ -266,18 +327,40 @@ void AB_LoginWithDeviceId(void)
         Con_Printf("AccelByte: ab_client_id not configured\n");
         return;
     }
-    if (!client_secret || !client_secret[0])
-    {
-        Con_Printf("AccelByte: ab_client_secret not configured\n");
-    }
+    // client_secret is optional for game SDK clients using public client auth
+
+    // Derive lobby URL from server URL: https:// -> wss://, http:// -> ws://
+    std::string server_url_str(server_url);
+    std::string lobby_url;
+    if (server_url_str.find("https://") == 0)
+        lobby_url = "wss://" + server_url_str.substr(8);
+    else if (server_url_str.find("http://") == 0)
+        lobby_url = "ws://" + server_url_str.substr(7);
+    else
+        lobby_url = server_url_str;
+
+    // Strip trailing slash and append /lobby/
+    if (!lobby_url.empty() && lobby_url.back() == '/')
+        lobby_url.pop_back();
+    lobby_url += "/lobby/";
+
+    Con_Printf("AccelByte: Lobby URL: %s\n", lobby_url.c_str());
 
     // Configure settings
     g_settings.set_server_url(server_url);
     g_settings.set_client_id(client_id);
-    g_settings.set_client_secret(client_secret);
+    // g_settings.set_client_secret(client_secret); // Game SDK clients use public client auth
+    g_settings.set_lobby_url(lobby_url.c_str());
 
     // Set as global settings
     accelbyte::settings::set_global_settings(g_settings);
+
+    // Initialize SessionService if not already done (needed later for joining sessions)
+    if (!accelbyte::session::SessionService::initialized())
+    {
+        accelbyte::session::SessionService::initialize(server_url);
+        Con_Printf("AccelByte: SessionService initialized\n");
+    }
 
     // Login with device ID
     Con_Printf("AccelByte: Logging in with device ID...\n");
@@ -308,28 +391,27 @@ void AB_Update(void)
         return;
     }
 
-    // std::lock_guard<std::mutex> lock(g_mutex);
+    // Poll lobby WebSocket — grab the connection pointer under the mutex,
+    // then call read() outside the lock. Message handlers will need to
+    // acquire the mutex themselves, so holding it during read() would deadlock.
+    accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> conn;
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        conn = g_lobby_connection;
+    }
 
-    // // Handle login queue polling
-    // if (g_login_status == AB_LOGIN_QUEUED && g_queue_ticket)
-    // {
-    //     double current_time = Sys_DoubleTime();
-    //     // TODO: Use ticket's player_polling_time_in_seconds when available
-    //     double poll_interval = 5.0; // Default 5 seconds
+    if (conn)
+    {
+        try
+        {
+            conn->read();
+        }
+        catch (const std::exception& e)
+        {
+            (void)e; // Silently ignore read errors for now
+        }
+    }
 
-    //     if (current_time - g_last_queue_poll >= poll_interval)
-    //     {
-    //         g_last_queue_poll = current_time;
-
-    //         // Poll the queue
-    //         accelbyte::user::UserLogin::login_with_queue_ticket(
-    //             g_queue_ticket,
-    //             OnLoginSuccess,
-    //             OnLoginQueued,
-    //             OnLoginError
-    //         );
-    //     }
-    // }
     runner.execute_task_queue();
 }
 
