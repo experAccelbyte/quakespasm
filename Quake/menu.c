@@ -40,6 +40,9 @@ void M_Menu_Main_f (void);
 		void M_Menu_Save_f (void);
 	void M_Menu_MultiPlayer_f (void);
 		void M_Menu_Setup_f (void);
+#ifdef USE_ACCELBYTE_GAMESDK
+		void M_Menu_Matchmake_f (void);
+#endif
 		void M_Menu_Net_f (void);
 		void M_Menu_LanConfig_f (void);
 		void M_Menu_GameOptions_f (void);
@@ -56,6 +59,9 @@ void M_Main_Draw (void);
 		void M_Load_Draw (void);
 		void M_Save_Draw (void);
 	void M_MultiPlayer_Draw (void);
+#ifdef USE_ACCELBYTE_GAMESDK
+		void M_Matchmake_Draw (void);
+#endif
 		void M_Setup_Draw (void);
 		void M_Net_Draw (void);
 		void M_LanConfig_Draw (void);
@@ -73,6 +79,9 @@ void M_Main_Key (int key);
 		void M_Load_Key (int key);
 		void M_Save_Key (int key);
 	void M_MultiPlayer_Key (int key);
+#ifdef USE_ACCELBYTE_GAMESDK
+		void M_Matchmake_Key (int key);
+#endif
 		void M_Setup_Key (int key);
 		void M_Net_Key (int key);
 		void M_LanConfig_Key (int key);
@@ -616,7 +625,11 @@ void M_Save_Key (int k)
 /* MULTIPLAYER MENU */
 
 int	m_multiplayer_cursor;
+#ifdef USE_ACCELBYTE_GAMESDK
+#define	MULTIPLAYER_ITEMS	4
+#else
 #define	MULTIPLAYER_ITEMS	3
+#endif
 
 
 void M_Menu_MultiPlayer_f (void)
@@ -628,6 +641,19 @@ void M_Menu_MultiPlayer_f (void)
 }
 
 
+#ifdef USE_ACCELBYTE_GAMESDK
+static void M_PrintScaled (int cx, int cy, const char *str, int scale)
+{
+	char	s[256];
+	int	i;
+
+	for (i = 0; str[i] && i < (int)sizeof(s)-1; i++)
+		s[i] = str[i] + 128;
+	s[i] = '\0';
+	Draw_StringScaled (cx, cy, s, scale);
+}
+#endif
+
 void M_MultiPlayer_Draw (void)
 {
 	int		f;
@@ -637,6 +663,10 @@ void M_MultiPlayer_Draw (void)
 	p = Draw_CachePic ("gfx/p_multi.lmp");
 	M_DrawPic ( (320-p->width)/2, 4, p);
 	M_DrawTransPic (72, 32, Draw_CachePic ("gfx/mp_menu.lmp") );
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	M_PrintScaled (72, 96, "Find Match", 2);
+#endif
 
 	f = (int)(realtime * 10)%6;
 
@@ -688,9 +718,111 @@ void M_MultiPlayer_Key (int key)
 		case 2:
 			M_Menu_Setup_f ();
 			break;
+#ifdef USE_ACCELBYTE_GAMESDK
+		case 3:
+			M_Menu_Matchmake_f ();
+			break;
+#endif
 		}
 	}
 }
+
+//=============================================================================
+/* MATCHMAKING MENU */
+#ifdef USE_ACCELBYTE_GAMESDK
+
+void M_Menu_Matchmake_f (void)
+{
+	IN_Deactivate(modestate == MS_WINDOWED);
+	key_dest = key_menu;
+	m_state = m_matchmake;
+	m_entersound = true;
+	AB_CreateMatchTicket ();
+}
+
+void M_Matchmake_Draw (void)
+{
+	int		y;
+	const char	*dots;
+	int		ndots;
+	ab_matchmake_status_t status;
+
+	status = AB_GetMatchmakingStatus ();
+
+	M_DrawTransPic (16, 4, Draw_CachePic ("gfx/qplaque.lmp") );
+
+	y = 40;
+
+	switch (status)
+	{
+	case AB_MM_SEARCHING:
+		ndots = ((int)(realtime * 2)) % 4;
+		dots = (ndots == 0) ? "" : (ndots == 1) ? "." : (ndots == 2) ? ".." : "...";
+		M_PrintWhite (84, y, va("Searching for a match%s", dots));
+		M_Print (108, y + 28, "Press ESC to cancel");
+		break;
+
+	case AB_MM_FOUND:
+		M_PrintWhite (104, y, "Match found!");
+		M_PrintWhite (80, y + 16, va("Players: %d  Teams: %d",
+			AB_GetMatchNumPlayers(), AB_GetMatchNumTeams()));
+		break;
+
+	case AB_MM_JOINING:
+		ndots = ((int)(realtime * 2)) % 4;
+		dots = (ndots == 0) ? "" : (ndots == 1) ? "." : (ndots == 2) ? ".." : "...";
+		M_PrintWhite (96, y, va("Joining session%s", dots));
+		break;
+
+	case AB_MM_JOINED_AS_LEADER:
+		M_PrintWhite (96, y, "Starting game...");
+		break;
+
+	case AB_MM_JOINED_AS_CLIENT:
+		ndots = ((int)(realtime * 2)) % 4;
+		dots = (ndots == 0) ? "" : (ndots == 1) ? "." : (ndots == 2) ? ".." : "...";
+		M_PrintWhite (88, y, va("Waiting for host%s", dots));
+		break;
+
+	case AB_MM_HOSTING:
+		M_PrintWhite (92, y, "Starting server...");
+		break;
+
+	case AB_MM_CONNECTING:
+		ndots = ((int)(realtime * 2)) % 4;
+		dots = (ndots == 0) ? "" : (ndots == 1) ? "." : (ndots == 2) ? ".." : "...";
+		M_PrintWhite (84, y, va("Connecting to host%s", dots));
+		break;
+
+	case AB_MM_CANCELLED:
+		M_PrintWhite (80, y, "Matchmaking cancelled");
+		M_Print (108, y + 28, "Press ESC to go back");
+		break;
+
+	case AB_MM_ERROR:
+		M_PrintWhite (104, y, "Matchmaking error");
+		M_Print (108, y + 28, "Press ESC to go back");
+		break;
+
+	case AB_MM_IDLE:
+	default:
+		break;
+	}
+}
+
+void M_Matchmake_Key (int key)
+{
+	switch (key)
+	{
+	case K_ESCAPE:
+	case K_BBUTTON:
+		AB_CancelMatchTicket ();
+		M_Menu_MultiPlayer_f ();
+		break;
+	}
+}
+
+#endif /* USE_ACCELBYTE_GAMESDK */
 
 //=============================================================================
 /* SETUP MENU */
@@ -2676,6 +2808,12 @@ void M_Draw (void)
 	case m_slist:
 		M_ServerList_Draw ();
 		break;
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	case m_matchmake:
+		M_Matchmake_Draw ();
+		break;
+#endif
 	}
 
 	if (m_entersound)
@@ -2758,6 +2896,12 @@ void M_Keydown (int key)
 	case m_slist:
 		M_ServerList_Key (key);
 		return;
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	case m_matchmake:
+		M_Matchmake_Key (key);
+		return;
+#endif
 	}
 }
 

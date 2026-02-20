@@ -10,6 +10,20 @@
 extern "C" {
 #endif
 
+/* Matchmaking status enum */
+typedef enum {
+    AB_MM_IDLE,
+    AB_MM_SEARCHING,
+    AB_MM_FOUND,
+    AB_MM_JOINING,
+    AB_MM_JOINED_AS_LEADER,
+    AB_MM_JOINED_AS_CLIENT,
+    AB_MM_HOSTING,
+    AB_MM_CONNECTING,
+    AB_MM_CANCELLED,
+    AB_MM_ERROR
+} ab_matchmake_status_t;
+
 /* Login status enum */
 typedef enum {
     AB_LOGIN_IDLE,          /* Not started */
@@ -75,6 +89,61 @@ const char* AB_GetErrorMessage(void);
  * strategy: 0 = OVERRIDE, 1 = INCREMENT, 2 = MAX, 3 = MIN
  */
 void AB_UpdateUserStatItemValue(const char* stat_code, float value, int strategy);
+
+/*
+ * Create a match ticket — starts searching for a match
+ */
+void AB_CreateMatchTicket(void);
+
+/*
+ * Cancel the current match ticket
+ */
+void AB_CancelMatchTicket(void);
+
+/*
+ * Get current matchmaking status
+ */
+ab_matchmake_status_t AB_GetMatchmakingStatus(void);
+
+/*
+ * Set matchmaking status (for menu use)
+ */
+void AB_SetMatchmakingStatus(ab_matchmake_status_t status);
+
+/*
+ * Get matchmaking error message (NULL if no error)
+ */
+const char* AB_GetMatchmakingErrorMessage(void);
+
+/*
+ * Get match ticket ID (NULL if none)
+ */
+const char* AB_GetMatchTicketId(void);
+
+/*
+ * Get match ID after match found (NULL if none)
+ */
+const char* AB_GetMatchId(void);
+
+/*
+ * Get match pool name (NULL if none)
+ */
+const char* AB_GetMatchPoolName(void);
+
+/*
+ * Get number of players in the match
+ */
+int AB_GetMatchNumPlayers(void);
+
+/*
+ * Get number of teams in the match
+ */
+int AB_GetMatchNumTeams(void);
+
+/*
+ * Check if we are the session leader
+ */
+int AB_IsSessionLeader(void);
 
 /*
  * Check if SDK is initialized
