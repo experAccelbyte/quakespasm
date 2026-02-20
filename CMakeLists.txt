@@ -200,6 +200,8 @@ if(USE_ACCELBYTE_GAMESDK)
     set(AB_INTEGRATION_SOURCES
         ${QUAKE_DIR}/ABIntegration/ab_integration.cpp
         ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
+        ${QUAKE_DIR}/ABIntegration/ams.cpp
+        ${QUAKE_DIR}/ABIntegration/easywsclient.cpp
     )
 endif()
 
@@ -215,7 +217,12 @@ endif()
 if(WIN32)
     # Add Windows resource file for application icon
     set(RC_FILE ${CMAKE_SOURCE_DIR}/Windows/QuakeSpasm.rc)
-    add_executable(quakespasm WIN32 ${ALL_SOURCES} ${RC_FILE})
+    option(QUAKE_CONSOLE_APP "Build as console application (for dedicated server)" OFF)
+    if(QUAKE_CONSOLE_APP)
+        add_executable(quakespasm ${ALL_SOURCES} ${RC_FILE})
+    else()
+        add_executable(quakespasm WIN32 ${ALL_SOURCES} ${RC_FILE})
+    endif()
 else()
     add_executable(quakespasm ${ALL_SOURCES})
 endif()
@@ -348,8 +355,9 @@ if(WIN32)
     endif()
     set(WINDOWS_CODEC_INC_DIR ${CMAKE_SOURCE_DIR}/Windows/codecs/include)
 else()
-    # Unix math library
-    target_link_libraries(quakespasm PRIVATE m)
+    # Unix math library and pthreads
+    find_package(Threads REQUIRED)
+    target_link_libraries(quakespasm PRIVATE m Threads::Threads)
 endif()
 
 # ------------------------------------------------------------------------------

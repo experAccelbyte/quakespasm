@@ -149,6 +149,36 @@
             }
         },
         {
+            "name": "msvc-x64-ds-debug",
+            "displayName": "MSVC x64 Dedicated Server Debug",
+            "description": "Debug build for dedicated server (console app)",
+            "inherits": "windows-msvc-base",
+            "binaryDir": "${sourceDir}/out/x64/windows/msvc/ds-debug",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QUAKE_CONSOLE_APP": "ON"
+            }
+        },
+        {
+            "name": "msvc-x64-ds-release",
+            "displayName": "MSVC x64 Dedicated Server Release",
+            "description": "Release build for dedicated server (console app)",
+            "inherits": "windows-msvc-base",
+            "binaryDir": "${sourceDir}/out/x64/windows/msvc/ds-release",
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            },
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "QUAKE_CONSOLE_APP": "ON"
+            }
+        },
+        {
             "name": "windows-mingw-base",
             "hidden": true,
             "generator": "Ninja",
@@ -210,6 +240,14 @@
         {
             "name": "msvc-x64-release",
             "configurePreset": "msvc-x64-release"
+        },
+        {
+            "name": "msvc-x64-ds-debug",
+            "configurePreset": "msvc-x64-ds-debug"
+        },
+        {
+            "name": "msvc-x64-ds-release",
+            "configurePreset": "msvc-x64-ds-release"
         },
         {
             "name": "msvc-x86-debug",

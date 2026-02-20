@@ -28,6 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifdef USE_ACCELBYTE_GAMESDK
 #include "ABIntegration/ab_integration.h"
+#include "ABIntegration/ams.h"
 #endif
 
 /*
@@ -777,6 +778,7 @@ void _Host_Frame (float time)
 
 #ifdef USE_ACCELBYTE_GAMESDK
 	AB_Update ();
+	AMS_Update ();
 #endif
 
 	host_framecount++;
@@ -907,11 +909,19 @@ void Host_Init (void)
 
 	if (cls.state == ca_dedicated)
 	{
+		if (*my_tcpip_address)
+			Con_Printf ("Listening on %s:%d (UDP)\n", my_tcpip_address, net_hostport);
+		else
+			Con_Printf ("Listening on port %d (UDP)\n", net_hostport);
+
 		Cbuf_AddText ("exec autoexec.cfg\n");
 		Cbuf_AddText ("stuffcmds");
 		Cbuf_Execute ();
 		if (!sv.active)
 			Cbuf_AddText ("map start\n");
+#ifdef USE_ACCELBYTE_GAMESDK
+		AMS_Init ();
+#endif
 	}
 }
 
@@ -936,6 +946,7 @@ void Host_Shutdown(void)
 	isdown = true;
 
 #ifdef USE_ACCELBYTE_GAMESDK
+	AMS_Shutdown ();
 	AB_Shutdown ();
 #endif
 

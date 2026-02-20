@@ -34,3 +34,6 @@ cmake-build-*/
 .DS_Store
 .claude/settings.local.json
 .claude/plans
+session/
+id1/
+config.json
