@@ -326,7 +326,6 @@ make DEBUG=1 USE_SDL2=1
 * `Quakespasm-Music.txt` - Music playback documentation
 * `LICENSE.txt` - GNU GPL v2 license
 * `Misc/fitzquake*.txt` - Historical FitzQuake documentation (reference for inherited features)
-* `.claude\plans\matchmaking-recording-plan.md` - specifics for creating a step by step recording adding accelbyte matchmaking to the project
 
 ### External Resources
 
@@ -373,6 +372,4 @@ When completing tasks:
 ---
 
 ## Current Goal
-The current goal for this project is to create a recording of step by step adding accelbyte matchmaking to quake. 
-The steps and script are outlined in .claude\plans\matchmaking-recording-plan.md and I will be prompting them one at a time.
-Re-read that document (.claude\plans\matchmaking-recording-plan.md) each time after compacting the context.
+The current goal for this project is to make the dedicated server run in AMS. This includes implementing the watchdog protocol so we can call ready.
