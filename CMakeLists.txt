@@ -69,6 +69,29 @@ if(NOT VORBISLIB STREQUAL "vorbis" AND NOT VORBISLIB STREQUAL "tremor")
     message(FATAL_ERROR "Invalid VORBISLIB setting: ${VORBISLIB}. Must be 'vorbis' or 'tremor'")
 endif()
 
+#######################################################################################
+# ARCHITECURE AND PLATFORM CHECK
+#######################################################################################
+STRING(TOLOWER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_LOWER_CASE)
+if("${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "windows" AND NOT CMAKE_CROSSCOMPILING)
+    set(MS_WIN_DESKTOP ON)
+    message("Platform: MS_WIN_DESKTOP")
+elseif(UNIX AND "${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "darwin")
+    message("Platform: Darwin")
+    set(APPLE_DESKTOP ON)
+elseif(UNIX AND "${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "linux")
+    message("Platform: Linux")
+    set(LINUX_DESKTOP ON)
+endif()
+
+if(MS_WIN_DESKTOP OR APPLE_DESKTOP OR LINUX_DESKTOP)
+    set(DESKTOP_PLATFORM ON)
+endif()
+message("Cross compilation: " ${CMAKE_CROSSCOMPILING})
+if(CMAKE_CROSSCOMPILING)
+  add_compile_definitions(IS_CROSSCOMPILING=1)
+endif()
+
 # ------------------------------------------------------------------------------
 # Source Files
 # ------------------------------------------------------------------------------
@@ -306,8 +329,14 @@ target_link_libraries(quakespasm PRIVATE OpenGL::GL)
 
 # AccelByte GameSDK
 if(USE_ACCELBYTE_GAMESDK)
-    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk")
-    find_package(accelbyte-gamesdk REQUIRED)
+if(WIN32)
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/windows")
+elseif(LINUX_DESKTOP)
+    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/linux")
+else()
+    message(FATAL_ERROR "AccelByte C++ SDK does not support this platform!")
+endif()
+find_package(accelbyte-gamesdk REQUIRED)
     target_link_libraries(quakespasm PRIVATE
         accelbyte-gamesdk::user
         accelbyte-gamesdk::lobby
@@ -317,7 +346,8 @@ if(USE_ACCELBYTE_GAMESDK)
     )
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
     target_compile_features(quakespasm PRIVATE cxx_std_20)
-    if(NOT WIN32)
+    if(LINUX_DESKTOP)
+        # RPATH Handling
         # Load .so files from the same directory as the executable at runtime.
         set_target_properties(quakespasm PROPERTIES
             BUILD_RPATH  "\$ORIGIN"
