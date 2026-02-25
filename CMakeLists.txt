@@ -317,6 +317,14 @@ if(USE_ACCELBYTE_GAMESDK)
     )
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
     target_compile_features(quakespasm PRIVATE cxx_std_20)
+    if(NOT WIN32)
+        # Load .so files from the same directory as the executable at runtime.
+        set_target_properties(quakespasm PROPERTIES
+            BUILD_RPATH  "\$ORIGIN"
+            INSTALL_RPATH "\$ORIGIN"
+        )
+        target_link_libraries(quakespasm PRIVATE stdc++)
+    endif()
 endif()
 
 # Platform-specific libraries
@@ -558,7 +566,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     include(CheckCCompilerFlag)
     check_c_compiler_flag("-std=gnu11" COMPILER_SUPPORTS_GNU11)
     if(COMPILER_SUPPORTS_GNU11)
-        target_compile_options(quakespasm PRIVATE -std=gnu11)
+        target_compile_features(quakespasm PRIVATE c_std_11)
     endif()
 
     # Release optimizations
@@ -701,6 +709,23 @@ if(WIN32)
             endif()
         endforeach()
     endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# Copy .so files to build directory (Linux)
+# ------------------------------------------------------------------------------
+
+if(NOT WIN32 AND USE_ACCELBYTE_GAMESDK)
+    set(ACCELBYTE_SO_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/lib/linux)
+    file(GLOB ACCELBYTE_SO_FILES "${ACCELBYTE_SO_DIR}/*.so")
+    foreach(SO_FILE ${ACCELBYTE_SO_FILES})
+        add_custom_command(TARGET quakespasm POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${SO_FILE}"
+                $<TARGET_FILE_DIR:quakespasm>
+            COMMENT "Copying ${SO_FILE} to output directory"
+        )
+    endforeach()
 endif()
 
 # ------------------------------------------------------------------------------
