@@ -702,60 +702,31 @@ if(WIN32)
     endforeach()
 
     # Copy AccelByte GameSDK DLLs
-    if(USE_ACCELBYTE_GAMESDK)
-        set(ACCELBYTE_DLL_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/bin)
+    if(WIN32 AND USE_ACCELBYTE_GAMESDK)
+        set(ACCELBYTE_DLL_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/windows/bin)
 
-        # Core SDK DLLs (user, lobby, settings and their dependencies)
-        set(ACCELBYTE_DLLS
-            # Main SDK components
-            accelbyte-gamesdk-user.dll
-            accelbyte-gamesdk-lobby.dll
-            accelbyte-gamesdk-settings.dll
-            accelbyte-gamesdk-crypto.dll
-            accelbyte-gamesdk-common.dll
-            # Required abcnl dependencies
-            abcnl-common.dll
-            abcnl-memory.dll
-            abcnl-http.dll
-            abcnl-utils.dll
-            abcnl-tls.dll
-            abcnl-platform_connection.dll
-            abcnl-web_socket.dll
-            abcnl-cpp_web_socket.dll
-            abcnl-curl_http_executor.dll
-            abcnl-iam.dll
-            abcnl-lobby.dll
-            abcnl-codegen_common.dll
-        )
+        file(GLOB ACCELBYTE_DLL_FILES "${ACCELBYTE_DLL_DIR}/*.dll")
 
-        foreach(DLL ${ACCELBYTE_DLLS})
-            if(EXISTS "${ACCELBYTE_DLL_DIR}/${DLL}")
-                add_custom_command(TARGET quakespasm POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${ACCELBYTE_DLL_DIR}/${DLL}"
-                        $<TARGET_FILE_DIR:quakespasm>
-                    COMMENT "Copying ${DLL} to output directory"
-                )
-            endif()
+        foreach(DLL_FILE ${ACCELBYTE_DLL_FILES})
+            add_custom_command(TARGET quakespasm POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${DLL_FILE}"
+                    $<TARGET_FILE_DIR:quakespasm>
+                COMMENT "Copying ${DLL_FILE} to output directory"
+            )
         endforeach()
+    elseif(NOT WIN32 AND USE_ACCELBYTE_GAMESDK)
+        # set(ACCELBYTE_SO_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/linux/lib)
+        # file(GLOB ACCELBYTE_SO_FILES "${ACCELBYTE_SO_DIR}/*.so")
+        # foreach(SO_FILE ${ACCELBYTE_SO_FILES})
+        #     add_custom_command(TARGET quakespasm POST_BUILD
+        #         COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        #             "${SO_FILE}"
+        #             $<TARGET_FILE_DIR:quakespasm>
+        #         COMMENT "Copying ${SO_FILE} to output directory"
+        #     )
+        # endforeach()
     endif()
-endif()
-
-# ------------------------------------------------------------------------------
-# Copy .so files to build directory (Linux)
-# ------------------------------------------------------------------------------
-
-if(NOT WIN32 AND USE_ACCELBYTE_GAMESDK)
-    set(ACCELBYTE_SO_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/lib/linux)
-    file(GLOB ACCELBYTE_SO_FILES "${ACCELBYTE_SO_DIR}/*.so")
-    foreach(SO_FILE ${ACCELBYTE_SO_FILES})
-        add_custom_command(TARGET quakespasm POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${SO_FILE}"
-                $<TARGET_FILE_DIR:quakespasm>
-            COMMENT "Copying ${SO_FILE} to output directory"
-        )
-    endforeach()
 endif()
 
 # ------------------------------------------------------------------------------
