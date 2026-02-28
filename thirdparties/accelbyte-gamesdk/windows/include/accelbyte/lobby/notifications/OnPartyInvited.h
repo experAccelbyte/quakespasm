@@ -1,0 +1,35 @@
+// Copyright (c) 2023 AccelByte Inc. All Rights Reserved.
+// This is licensed software from AccelByte Inc, for limitations
+// and restrictions contact your company contract manager.
+#pragma once
+
+#include "../Message.h"
+#include "../lobby_exports.h"
+
+#include <accelbyte/common/DateTime.h>
+#include <accelbyte/common/String.h>
+
+namespace accelbyte {
+namespace lobby {
+namespace notifications {
+
+class OnPartyInvited : public Message {
+public:
+    ACCELBYTE_LOBBY_API static const String& message_id();
+
+    ACCELBYTE_LOBBY_API OnPartyInvited();
+    ACCELBYTE_LOBBY_API virtual ~OnPartyInvited();
+    ACCELBYTE_LOBBY_API virtual const String& id() const override;
+
+    String payload{};
+    accelbyte::DateTime sent_at{};
+
+    //payload datas
+    String party_id{};
+    String sender_id{};
+    String code{};
+};
+
+} // namespace notifications
+} // namespace lobby
+} // namespace accelbyte

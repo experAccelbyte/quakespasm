@@ -69,6 +69,29 @@ if(NOT VORBISLIB STREQUAL "vorbis" AND NOT VORBISLIB STREQUAL "tremor")
     message(FATAL_ERROR "Invalid VORBISLIB setting: ${VORBISLIB}. Must be 'vorbis' or 'tremor'")
 endif()
 
+#######################################################################################
+# ARCHITECURE AND PLATFORM CHECK
+#######################################################################################
+STRING(TOLOWER ${CMAKE_SYSTEM_NAME} CMAKE_SYSTEM_NAME_LOWER_CASE)
+if("${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "windows" AND NOT CMAKE_CROSSCOMPILING)
+    set(MS_WIN_DESKTOP ON)
+    message("Platform: MS_WIN_DESKTOP")
+elseif(UNIX AND "${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "darwin")
+    message("Platform: Darwin")
+    set(APPLE_DESKTOP ON)
+elseif(UNIX AND "${CMAKE_SYSTEM_NAME_LOWER_CASE}" STREQUAL "linux")
+    message("Platform: Linux")
+    set(LINUX_DESKTOP ON)
+endif()
+
+if(MS_WIN_DESKTOP OR APPLE_DESKTOP OR LINUX_DESKTOP)
+    set(DESKTOP_PLATFORM ON)
+endif()
+message("Cross compilation: " ${CMAKE_CROSSCOMPILING})
+if(CMAKE_CROSSCOMPILING)
+  add_compile_definitions(IS_CROSSCOMPILING=1)
+endif()
+
 # ------------------------------------------------------------------------------
 # Source Files
 # ------------------------------------------------------------------------------
