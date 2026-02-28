@@ -336,13 +336,24 @@ target_link_libraries(quakespasm PRIVATE OpenGL::GL)
 
 # AccelByte GameSDK
 if(USE_ACCELBYTE_GAMESDK)
-    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk")
+    if(WIN32)
+        list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/windows")
+    elseif(LINUX_DESKTOP)
+        list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/linux")
+    else()
+        message(FATAL_ERROR "AccelByte C++ SDK does not support this platform!")
+    endif()
     find_package(accelbyte-gamesdk REQUIRED)
 
     # Find the cpp_web_socket library
+    if(WIN32)
+        set(ACCELBYTE_LIB_DIR "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/windows/lib")
+    elseif(LINUX_DESKTOP)
+        set(ACCELBYTE_LIB_DIR "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/linux/lib")
+    endif()
     find_library(ACCELBYTE_CPP_WEBSOCKET_LIB
         NAMES abcnl-cpp_web_socket
-        PATHS "${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/lib"
+        PATHS "${ACCELBYTE_LIB_DIR}"
         NO_DEFAULT_PATH
     )
 
@@ -363,6 +374,15 @@ if(USE_ACCELBYTE_GAMESDK)
 
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
     target_compile_features(quakespasm PRIVATE cxx_std_20)
+    if(LINUX_DESKTOP)
+        # RPATH Handling
+        # Load .so files from the same directory as the executable at runtime.
+        set_target_properties(quakespasm PROPERTIES
+            BUILD_RPATH  "\$ORIGIN"
+            INSTALL_RPATH "\$ORIGIN"
+        )
+        target_link_libraries(quakespasm PRIVATE stdc++)
+    endif()
 endif()
 
 # Platform-specific libraries
@@ -605,7 +625,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     include(CheckCCompilerFlag)
     check_c_compiler_flag("-std=gnu11" COMPILER_SUPPORTS_GNU11)
     if(COMPILER_SUPPORTS_GNU11)
-        target_compile_options(quakespasm PRIVATE -std=gnu11)
+        target_compile_features(quakespasm PRIVATE c_std_11)
     endif()
 
     # Release optimizations
@@ -711,78 +731,30 @@ if(WIN32)
     endforeach()
 
     # Copy AccelByte GameSDK DLLs
-    if(USE_ACCELBYTE_GAMESDK)
-        set(ACCELBYTE_DLL_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/bin)
+    if(WIN32 AND USE_ACCELBYTE_GAMESDK)
+        set(ACCELBYTE_DLL_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/windows/bin)
 
-        # Core SDK DLLs (user, lobby, settings and their dependencies)
-        set(ACCELBYTE_DLLS
-            # Main SDK components
-            accelbyte-gamesdk-user.dll
-            accelbyte-gamesdk-lobby.dll
-            accelbyte-gamesdk-settings.dll
-            accelbyte-gamesdk-crypto.dll
-            accelbyte-gamesdk-common.dll
-            accelbyte-gamesdk-chat.dll
-            accelbyte-gamesdk-p2p_connection.dll
-            # Required abcnl dependencies
-            abcnl-common.dll
-            abcnl-memory.dll
-            abcnl-http.dll
-            abcnl-utils.dll
-            abcnl-tls.dll
-            abcnl-platform_connection.dll
-            abcnl-web_socket.dll
-            abcnl-cpp_web_socket.dll
-            abcnl-curl_http_executor.dll
-            abcnl-iam.dll
-            abcnl-lobby.dll
-            abcnl-codegen_common.dll
-            abcnl-codegen_test_tools.dll
-            abcnl-debug_handler.dll
-            abcnl-debug_http_executor.dll
-            abcnl-achievement.dll
-            abcnl-cloudsave.dll
-            abcnl-audit.dll
-            abcnl-session.dll
-            abcnl-match2.dll
-            abcnl-basic.dll
-            abcnl-challenge.dll
-            abcnl-group.dll
-            abcnl-chat.dll
-            abcnl-turn_manager.dll
-            abcnl-social.dll
-            abcnl-ugc.dll
-            abcnl-leaderboard.dll
-            abcnl-platform.dll
-            abcnl-logger.dll
-            abcnl-network_utility.dll
-            abcnl-network_debug_output.dll
-            abcnl-p2p_connection.dll
-            abcnl-libjuice_p2p_connection.dll
-            abcnl-windows_network_utility.dll
-            abcnl-xbox_connection.dll
-            abcnl-inventory.dll
-            abcnl-legal.dll
-            abcnl-reporting.dll
-            abcnl-seasonpass.dll
-            abcnl-test_utils.dll
-            abcnl-ehs.dll
-            abcnl-file_debug_output.dll
-            abcnl-gametelemetry.dll
-            abcnl-gdpr.dll
-            abcnl-login_queue.dll
-        )
+        file(GLOB ACCELBYTE_DLL_FILES "${ACCELBYTE_DLL_DIR}/*.dll")
 
-        foreach(DLL ${ACCELBYTE_DLLS})
-            if(EXISTS "${ACCELBYTE_DLL_DIR}/${DLL}")
-                add_custom_command(TARGET quakespasm POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${ACCELBYTE_DLL_DIR}/${DLL}"
-                        $<TARGET_FILE_DIR:quakespasm>
-                    COMMENT "Copying ${DLL} to output directory"
-                )
-            endif()
+        foreach(DLL_FILE ${ACCELBYTE_DLL_FILES})
+            add_custom_command(TARGET quakespasm POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${DLL_FILE}"
+                    $<TARGET_FILE_DIR:quakespasm>
+                COMMENT "Copying ${DLL_FILE} to output directory"
+            )
         endforeach()
+    elseif(NOT WIN32 AND USE_ACCELBYTE_GAMESDK)
+        # set(ACCELBYTE_SO_DIR ${CMAKE_SOURCE_DIR}/thirdparties/accelbyte-gamesdk/linux/lib)
+        # file(GLOB ACCELBYTE_SO_FILES "${ACCELBYTE_SO_DIR}/*.so")
+        # foreach(SO_FILE ${ACCELBYTE_SO_FILES})
+        #     add_custom_command(TARGET quakespasm POST_BUILD
+        #         COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        #             "${SO_FILE}"
+        #             $<TARGET_FILE_DIR:quakespasm>
+        #         COMMENT "Copying ${SO_FILE} to output directory"
+        #     )
+        # endforeach()
     endif()
 endif()
 
