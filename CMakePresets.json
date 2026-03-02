@@ -151,6 +151,28 @@
             }
         },
         {
+            "name": "ds-debug",
+            "displayName": "Linux Dedicated Server Debug",
+            "description": "Debug build for dedicated server (console app)",
+            "inherits": "linux-base",
+            "binaryDir": "${sourceDir}/out/x64/linux/gcc/ds-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QUAKE_CONSOLE_APP": "ON"
+            }
+        },
+        {
+            "name": "ds-release",
+            "displayName": "Linux Dedicated Server Release",
+            "description": "Release build for dedicated server (console app)",
+            "inherits": "linux-base",
+            "binaryDir": "${sourceDir}/out/x64/linux/gcc/ds-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "QUAKE_CONSOLE_APP": "ON"
+            }
+        },
+        {
             "name": "msvc-x64-ds-debug",
             "displayName": "MSVC x64 Dedicated Server Debug",
             "description": "Debug build for dedicated server (console app)",
@@ -242,6 +264,14 @@
         {
             "name": "msvc-x64-release",
             "configurePreset": "msvc-x64-release"
+        },
+        {
+            "name": "ds-debug",
+            "configurePreset": "ds-debug"
+        },
+        {
+            "name": "ds-release",
+            "configurePreset": "ds-release"
         },
         {
             "name": "msvc-x64-ds-debug",

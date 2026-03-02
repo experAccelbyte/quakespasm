@@ -34,7 +34,7 @@ class TypedMessageHandler<TypedMessage> : virtual public TypedMessageHandlerBase
 public:
     static_assert(std::is_base_of<Message, TypedMessage>::value, "TypedMessage must be derived from Message");
 
-    TypedMessageHandler<TypedMessage>()
+    TypedMessageHandler()
     {
         handled_messages_.insert(TypedMessage::message_id());
         handle_message_func_[TypedMessage::message_id()] =
