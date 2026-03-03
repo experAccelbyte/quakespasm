@@ -1,0 +1,209 @@
+#include "ab_instance.h"
+
+#include <accelbyte/user/UserLogin.h>
+#include <accelbyte/user/parameters/LoginWithDeviceId.h>
+#include <accelbyte/settings/global_settings.h>
+#include <accelbyte/crypto/md5.h>
+#include <accelbyte/social/UserStatistic.h>
+#include <accelbyte/social/user_statistic/UpdateUserStatItemValueV2.h>
+#include <accelbyte/social/models/UpdateStatItem.h>
+
+#include <future>
+
+extern "C" {
+#include "quakedef.h"
+#include "console.h"
+    extern double Sys_DoubleTime(void);
+}
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+static std::string GenerateDeviceId()
+{
+    std::string combined;
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS)
+    {
+        char guid[256] = {0};
+        DWORD size = sizeof(guid);
+        if (RegQueryValueExA(hKey, "MachineGuid", NULL, NULL, (LPBYTE)guid, &size) == ERROR_SUCCESS)
+            combined += guid;
+        RegCloseKey(hKey);
+    }
+    DWORD serial = 0;
+    if (GetVolumeInformationA("C:\\", NULL, 0, &serial, NULL, NULL, NULL, 0))
+        combined += std::to_string(serial);
+    if (combined.empty())
+        combined = "quakespasm-default-device";
+    return accelbyte::crypto::md5(accelbyte::String(combined.c_str())).c_str();
+}
+#else
+#include <fstream>
+
+static std::string GenerateDeviceId()
+{
+    std::string machine_id;
+    std::ifstream file("/etc/machine-id");
+    if (file.is_open()) { std::getline(file, machine_id); }
+    if (machine_id.empty()) {
+        std::ifstream dbus_file("/var/lib/dbus/machine-id");
+        if (dbus_file.is_open()) { std::getline(dbus_file, machine_id); }
+    }
+    if (machine_id.empty())
+        machine_id = "quakespasm-default-device";
+    return accelbyte::crypto::md5(accelbyte::String(machine_id.c_str())).c_str();
+}
+#endif
+
+ABInstance::ABInstance(cvar_t* cvar_url, cvar_t* cvar_client_id, cvar_t* cvar_client_secret)
+    : cvar_server_url_(cvar_url)
+    , cvar_client_id_(cvar_client_id)
+    , cvar_client_secret_(cvar_client_secret)
+{
+    device_id_ = GenerateDeviceId();
+    Con_Printf("AccelByte: Instance created. Device ID: %s\n", device_id_.c_str());
+}
+
+void ABInstance::SetServerUrl(const char* url)  { settings_.set_server_url(url); }
+void ABInstance::SetClientId(const char* id)    { settings_.set_client_id(id); }
+void ABInstance::SetClientSecret(const char* s) { settings_.set_client_secret(s); }
+
+void ABInstance::LoginWithDeviceId()
+{
+    if (cvar_server_url_ && cvar_server_url_->string && cvar_server_url_->string[0])
+        settings_.set_server_url(cvar_server_url_->string);
+    if (cvar_client_id_ && cvar_client_id_->string && cvar_client_id_->string[0])
+        settings_.set_client_id(cvar_client_id_->string);
+    if (cvar_client_secret_ && cvar_client_secret_->string && cvar_client_secret_->string[0])
+        settings_.set_client_secret(cvar_client_secret_->string);
+
+    accelbyte::settings::set_global_settings(settings_);
+
+    Con_Printf("AccelByte: Logging in with device ID...\n");
+
+    accelbyte::user::parameters::LoginWithDeviceId params;
+    params.device_id = device_id_.c_str();
+    params.create_headless = true;
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        login_status_ = AB_LOGIN_IN_PROGRESS;
+    }
+
+    login_future_ = std::async(std::launch::async, [params, this]() {
+        accelbyte::user::UserLogin::login_with_device_id(
+            params,
+            [this](accelbyte::memory::SharedPtr<accelbyte::user::User> user) { OnLoginSuccess(user); },
+            [this](accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket) { OnLoginQueued(ticket); },
+            [this](const accelbyte::Error& error) { OnLoginError(error); }
+        );
+    });
+}
+
+void ABInstance::UpdateUserStat(const char* stat_code, float value, int strategy)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!current_user_) {
+        Con_Printf("AccelByte: UpdateUserStat called but not logged in\n");
+        return;
+    }
+
+    using UpdateStrategy = accelbyte::social::model::UpdateStatItem::UpdateStrategy;
+    UpdateStrategy update_strategy;
+    switch (strategy)
+    {
+    case 0:  update_strategy = UpdateStrategy::OVERRIDE;  break;
+    case 1:  update_strategy = UpdateStrategy::INCREMENT;  break;
+    case 2:  update_strategy = UpdateStrategy::MAX;        break;
+    case 3:  update_strategy = UpdateStrategy::MIN;        break;
+    default:
+        Con_Printf("AccelByte: Invalid strategy %d (use 0=OVERRIDE, 1=INCREMENT, 2=MAX, 3=MIN)\n", strategy);
+        return;
+    }
+
+    accelbyte::social::user_statistic::UpdateUserStatItemValueV2 request;
+    request.stat_code = stat_code;
+    request.user_id = current_user_->user_id();
+    request.body.update_strategy = update_strategy;
+    request.body.value = value;
+
+    const accelbyte::tls::SecurityAuthorization& authorization = *current_user_;
+
+    std::string stat_code_copy = stat_code;
+    accelbyte::social::UserStatistic::update_user_stat_item_value_v2(
+        authorization,
+        request,
+        [stat_code_copy](const accelbyte::social::model::StatItemInc& result) {
+            Con_Printf("AccelByte: Stat '%s' updated, current value: %f\n",
+                stat_code_copy.c_str(), result.current_value);
+        },
+        [stat_code_copy](const accelbyte::Error& error) {
+            Con_Printf("AccelByte: Failed to update stat '%s' - %s\n",
+                stat_code_copy.c_str(), error.what().c_str());
+        }
+    );
+}
+
+void ABInstance::Update()
+{
+    task_runner_.execute_task_queue();
+}
+
+ab_login_status_t ABInstance::GetLoginStatus() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return login_status_;
+}
+
+const char* ABInstance::GetUserId() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return user_id_.empty() ? nullptr : user_id_.c_str();
+}
+
+const char* ABInstance::GetDisplayName() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return display_name_.empty() ? nullptr : display_name_.c_str();
+}
+
+const char* ABInstance::GetErrorMessage() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return error_message_.empty() ? nullptr : error_message_.c_str();
+}
+
+void ABInstance::OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    current_user_ = user;
+    user_id_ = user->user_id().c_str();
+    display_name_ = user->display_name().c_str();
+    login_status_ = AB_LOGIN_SUCCESS;
+    queue_ticket_ = nullptr;
+
+    task_runner_.queue_task([](const accelbyte::String& token) {
+        Con_Printf("AccelByte: Login successful! Token: %s\n", token.c_str());
+    }, user->credential()->access_token().value());
+}
+
+void ABInstance::OnLoginQueued(accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    login_status_ = AB_LOGIN_QUEUED;
+    queue_ticket_ = ticket;
+    last_queue_poll_ = Sys_DoubleTime();
+    Con_Printf("AccelByte: In login queue...\n");
+}
+
+void ABInstance::OnLoginError(const accelbyte::Error& error)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    error_message_ = error.what().c_str();
+    login_status_ = AB_LOGIN_FAILED;
+    queue_ticket_ = nullptr;
+    Con_Printf("AccelByte: Login failed - %s\n", error_message_.c_str());
+}

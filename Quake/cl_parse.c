@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "bgmusic.h"
 #include "ABIntegration/ab_integration.h"
+extern ab_instance_t* g_ab_instance;
 
 const char *svc_strings[] =
 {
@@ -1225,7 +1226,7 @@ void CL_ParseServerMessage (void)
 		case svc_killedmonster:
 			cl.stats[STAT_MONSTERS]++;
 			// Whenever a monster dies, save the current cl.stats[STAT_MONSTERS] value.
-			AB_UpdateUserStatItemValue("qmonsterkill", 1.0f, 1);
+			ab_update_user_stat(g_ab_instance, "qmonsterkill", 1.0f, 1);
 			break;
 
 		case svc_foundsecret:

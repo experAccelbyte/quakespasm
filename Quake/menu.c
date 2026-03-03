@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifdef USE_ACCELBYTE_GAMESDK
 #include "ABIntegration/ab_integration.h"
+extern ab_instance_t* g_ab_instance;
 static qboolean ab_login_triggered = false;
 #endif
 
@@ -253,7 +254,7 @@ void M_Menu_Main_f (void)
 	if (!ab_login_triggered)
 	{
 		ab_login_triggered = true;
-		AB_LoginWithDeviceId();
+		ab_login_with_device_id(g_ab_instance);
 	}
 #endif
 
