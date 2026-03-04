@@ -454,6 +454,13 @@ void SV_DropClient (qboolean crash)
 	host_client->old_frags = -999999;
 	net_activeconnections--;
 
+// dedicated server exits when all players leave
+	if (isDedicated && net_activeconnections == 0)
+	{
+		Con_Printf("All players disconnected — shutting down dedicated server\n");
+		Cbuf_AddText("quit\n");
+	}
+
 // send notification to all clients
 	for (i = 0, client = svs.clients; i < svs.maxclients; i++, client++)
 	{

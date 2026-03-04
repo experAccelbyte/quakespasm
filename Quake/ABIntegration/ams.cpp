@@ -58,7 +58,13 @@ static void AMS_ProcessMessage(const std::string& msg)
 		if (!g_ams_draining)
 		{
 			g_ams_draining = true;
-			Con_Printf("AMS: Drain received — server will shut down after current sessions\n");
+			Con_Printf("AMS: Drain received — server will shut down when all players leave\n");
+
+			if (net_activeconnections == 0)
+			{
+				Con_Printf("AMS: No players connected, shutting down now\n");
+				Cbuf_AddText("quit\n");
+			}
 		}
 	}
 }
