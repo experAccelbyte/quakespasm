@@ -4,9 +4,6 @@
 #include <accelbyte/user/parameters/LoginWithDeviceId.h>
 #include <accelbyte/settings/global_settings.h>
 #include <accelbyte/crypto/md5.h>
-#include <accelbyte/social/UserStatistic.h>
-#include <accelbyte/social/user_statistic/UpdateUserStatItemValueV2.h>
-#include <accelbyte/social/models/UpdateStatItem.h>
 
 #include <future>
 
@@ -65,6 +62,10 @@ ABInstance::ABInstance(cvar_t* cvar_url, cvar_t* cvar_client_id, cvar_t* cvar_cl
 {
     device_id_ = GenerateDeviceId();
     Con_Printf("AccelByte: Instance created. Device ID: %s\n", device_id_.c_str());
+
+    statistic_.SetTaskRunner(task_runner_);
+    cycle_.SetTaskRunner(task_runner_);
+    leaderboard_.SetTaskRunner(task_runner_);
 }
 
 void ABInstance::SetServerUrl(const char* url)  { settings_.set_server_url(url); }
@@ -103,48 +104,17 @@ void ABInstance::LoginWithDeviceId()
     });
 }
 
-void ABInstance::UpdateUserStat(const char* stat_code, float value, int strategy)
+AB_Statistic& ABInstance::GetStatistic()             { return statistic_; }
+const AB_Statistic& ABInstance::GetStatistic() const  { return statistic_; }
+AB_Cycle&       ABInstance::GetCycle()                { return cycle_; }
+const AB_Cycle& ABInstance::GetCycle() const          { return cycle_; }
+AB_Leaderboard&       ABInstance::GetLeaderboard()       { return leaderboard_; }
+const AB_Leaderboard& ABInstance::GetLeaderboard() const { return leaderboard_; }
+
+accelbyte::memory::SharedPtr<accelbyte::user::User> ABInstance::GetCurrentUser() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!current_user_) {
-        Con_Printf("AccelByte: UpdateUserStat called but not logged in\n");
-        return;
-    }
-
-    using UpdateStrategy = accelbyte::social::model::UpdateStatItem::UpdateStrategy;
-    UpdateStrategy update_strategy;
-    switch (strategy)
-    {
-    case 0:  update_strategy = UpdateStrategy::OVERRIDE;  break;
-    case 1:  update_strategy = UpdateStrategy::INCREMENT;  break;
-    case 2:  update_strategy = UpdateStrategy::MAX;        break;
-    case 3:  update_strategy = UpdateStrategy::MIN;        break;
-    default:
-        Con_Printf("AccelByte: Invalid strategy %d (use 0=OVERRIDE, 1=INCREMENT, 2=MAX, 3=MIN)\n", strategy);
-        return;
-    }
-
-    accelbyte::social::user_statistic::UpdateUserStatItemValueV2 request;
-    request.stat_code = stat_code;
-    request.user_id = current_user_->user_id();
-    request.body.update_strategy = update_strategy;
-    request.body.value = value;
-
-    const accelbyte::tls::SecurityAuthorization& authorization = *current_user_;
-
-    std::string stat_code_copy = stat_code;
-    accelbyte::social::UserStatistic::update_user_stat_item_value_v2(
-        authorization,
-        request,
-        [stat_code_copy](const accelbyte::social::model::StatItemInc& result) {
-            Con_Printf("AccelByte: Stat '%s' updated, current value: %f\n",
-                stat_code_copy.c_str(), result.current_value);
-        },
-        [stat_code_copy](const accelbyte::Error& error) {
-            Con_Printf("AccelByte: Failed to update stat '%s' - %s\n",
-                stat_code_copy.c_str(), error.what().c_str());
-        }
-    );
+    return current_user_;
 }
 
 void ABInstance::Update()

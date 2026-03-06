@@ -5,6 +5,9 @@
 #include <accelbyte/settings/InMemorySettings.h>
 #include <accelbyte/common/Error.h>
 #include "ab_integration.h"
+#include "ab_statistic.h"
+#include "ab_cycle.h"
+#include "ab_leaderboard.h"
 #include "ab_task_runner.h"
 
 extern "C" {
@@ -26,12 +29,19 @@ public:
 
     void LoginWithDeviceId();
     void Update();
-    void UpdateUserStat(const char* stat_code, float value, int strategy);
 
     ab_login_status_t GetLoginStatus() const;
     const char* GetUserId() const;
     const char* GetDisplayName() const;
     const char* GetErrorMessage() const;
+
+    AB_Statistic&       GetStatistic();
+    const AB_Statistic& GetStatistic() const;
+    AB_Cycle&           GetCycle();
+    const AB_Cycle&     GetCycle() const;
+    AB_Leaderboard&       GetLeaderboard();
+    const AB_Leaderboard& GetLeaderboard() const;
+    accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
 
 private:
     void OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user);
@@ -50,6 +60,9 @@ private:
     accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> queue_ticket_;
     accelbyte::settings::InMemorySettings settings_;
     ABTaskRunner task_runner_;
+    AB_Statistic   statistic_;
+    AB_Cycle       cycle_;
+    AB_Leaderboard leaderboard_;
     std::future<void> login_future_;
 
     cvar_t* cvar_server_url_    = nullptr;
