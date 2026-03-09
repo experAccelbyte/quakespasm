@@ -42,6 +42,7 @@
 #include <accelbyte/lobby/TypedMessageHandler.h>
 #include <accelbyte/lobby/notifications/OnMatchFound.h>
 #include <accelbyte/lobby/notifications/OnGameSessionUpdated.h>
+#include <accelbyte/lobby/notifications/OnDSStatusChanged.h>
 #include "ab_task_runner.h"
 
 // Standard library
@@ -124,6 +125,40 @@ static accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> g_lobby_c
 static std::future<void> g_matchmake_future;
 
 static ABTaskRunner runner;
+
+//------------------------------------------------------------------------------
+// AB_TryConnectFromDSInfo — extract IP/port from DS info and connect
+//------------------------------------------------------------------------------
+static bool AB_TryConnectFromDSInfo(const accelbyte::session::model::GameSession& session)
+{
+    const auto& ds_info = session.ds_information;
+
+    if (!ds_info.server.has_value())
+        return false;
+
+    const auto& server = ds_info.server.value();
+    if (!server.ip.has_value() || !server.port.has_value())
+        return false;
+
+    std::string ip = server.ip.value().c_str();
+    int port = server.port.value();
+    std::string address = ip + ":" + std::to_string(port);
+
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_host_address = address;
+        g_matchmake_status = AB_MM_CONNECTING;
+    }
+
+    runner.queue_task([address](){
+        Con_Printf("AccelByte: DS available at %s, connecting...\n", address.c_str());
+        Cbuf_AddText(va("connect \"%s\"\n", address.c_str()));
+        key_dest = key_game;
+        m_state = m_none;
+    });
+
+    return true;
+}
 
 //------------------------------------------------------------------------------
 // MatchFoundHandler — receives OnMatchFound from lobby WebSocket
@@ -215,6 +250,52 @@ public:
 };
 
 static std::shared_ptr<GameSessionUpdatedHandler> g_session_updated_handler;
+
+//------------------------------------------------------------------------------
+// DSStatusChangedHandler — receives DS status updates for DS sessions
+//------------------------------------------------------------------------------
+class DSStatusChangedHandler : public accelbyte::lobby::TypedMessageHandler<accelbyte::lobby::notifications::OnDSStatusChanged>
+{
+public:
+    void handle(const accelbyte::lobby::notifications::OnDSStatusChanged& message) override
+    {
+        std::string session_id;
+        accelbyte::memory::SharedPtr<accelbyte::user::User> user;
+
+        {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            if (g_matchmake_status != AB_MM_WAITING_FOR_DS)
+                return;
+            session_id = g_session_id;
+            user = g_current_user;
+        }
+
+        // Fetch full session to get typed ds_information
+        accelbyte::session::game_session::GetGameSession request;
+        request.session_id = session_id.c_str();
+        const accelbyte::tls::SecurityAuthorization& auth = *user;
+
+        accelbyte::session::GameSession::get_game_session(
+            auth, request,
+            [](const accelbyte::session::model::GameSession& session) {
+                if (!AB_TryConnectFromDSInfo(session))
+                {
+                    runner.queue_task([](){
+                        Con_Printf("AccelByte: DS status changed but not yet available, continuing to wait...\n");
+                    });
+                }
+            },
+            [](const accelbyte::Error& error) {
+                std::string err = error.what().c_str();
+                runner.queue_task([err](){
+                    Con_Printf("AccelByte: Failed to fetch session: %s\n", err.c_str());
+                });
+            }
+        );
+    }
+};
+
+static std::shared_ptr<DSStatusChangedHandler> g_ds_status_handler;
 //------------------------------------------------------------------------------
 // Device ID generation (Windows)
 //------------------------------------------------------------------------------
@@ -338,6 +419,9 @@ static void OnLoginSuccess(const accelbyte::memory::SharedPtr<accelbyte::user::U
             g_session_updated_handler = std::make_shared<GameSessionUpdatedHandler>();
             connection->add_message_handler(g_session_updated_handler);
 
+            g_ds_status_handler = std::make_shared<DSStatusChangedHandler>();
+            connection->add_message_handler(g_ds_status_handler);
+
             runner.queue_task([](){
                 Con_Printf("AccelByte: Connected to lobby successfully\n");
             });
@@ -436,6 +520,7 @@ void AB_Shutdown(void)
     g_lobby = nullptr;
     g_match_found_handler = nullptr;
     g_session_updated_handler = nullptr;
+    g_ds_status_handler = nullptr;
 
     // Reset match state
     g_matchmake_status = AB_MM_IDLE;
@@ -810,32 +895,62 @@ static void AB_JoinSession(void)
                 int version = session.version;
                 bool is_leader = (leader_id == our_user_id);
 
+                // Determine session type
+                std::string session_type = session.configuration.type.c_str();
+
                 {
                     std::lock_guard<std::mutex> lock(g_mutex);
                     g_session_id = session_id;
                     g_session_leader_id = leader_id;
                     g_session_version = version;
                     g_is_session_leader = is_leader;
-
-                    if (is_leader)
-                        g_matchmake_status = AB_MM_JOINED_AS_LEADER;
-                    else
-                        g_matchmake_status = AB_MM_JOINED_AS_CLIENT;
                 }
 
-                if (is_leader)
+                if (session_type == "DS")
                 {
-                    runner.queue_task([session_id](){
-                        Con_Printf("AccelByte: Joined session %s as LEADER — starting host\n", session_id.c_str());
-                        AB_StartHosting();
-                    });
+                    // DS session — connect from DS info or wait
+                    if (AB_TryConnectFromDSInfo(session))
+                    {
+                        runner.queue_task([session_id](){
+                            Con_Printf("AccelByte: Joined session %s — DS available, connecting\n", session_id.c_str());
+                        });
+                    }
+                    else
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(g_mutex);
+                            g_matchmake_status = AB_MM_WAITING_FOR_DS;
+                        }
+                        runner.queue_task([session_id](){
+                            Con_Printf("AccelByte: Joined session %s — waiting for DS\n", session_id.c_str());
+                        });
+                    }
                 }
                 else
                 {
-                    runner.queue_task([session_id, leader_id](){
-                        Con_Printf("AccelByte: Joined session %s as CLIENT — waiting for host (leader: %s)\n",
-                            session_id.c_str(), leader_id.c_str());
-                    });
+                    // P2P session — existing leader/client logic
+                    {
+                        std::lock_guard<std::mutex> lock(g_mutex);
+                        if (is_leader)
+                            g_matchmake_status = AB_MM_JOINED_AS_LEADER;
+                        else
+                            g_matchmake_status = AB_MM_JOINED_AS_CLIENT;
+                    }
+
+                    if (is_leader)
+                    {
+                        runner.queue_task([session_id](){
+                            Con_Printf("AccelByte: Joined session %s as LEADER — starting host\n", session_id.c_str());
+                            AB_StartHosting();
+                        });
+                    }
+                    else
+                    {
+                        runner.queue_task([session_id, leader_id](){
+                            Con_Printf("AccelByte: Joined session %s as CLIENT — waiting for host (leader: %s)\n",
+                                session_id.c_str(), leader_id.c_str());
+                        });
+                    }
                 }
             },
             [](const accelbyte::Error& error) {
