@@ -8,6 +8,8 @@
 
 #include <accelbyte/curl_http_executor/CurlRequestExecutorFactory.h>
 #include <accelbyte/http/RequestExecutorFactory.h>
+#include <accelbyte/settings/InMemorySettings.h>
+#include <accelbyte/settings/global_settings.h>
 
 #include <mutex>
 
@@ -18,6 +20,7 @@ extern "C" {
 static cvar_t ab_server_url    = {"ab_server_url",    "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_client_id     = {"ab_client_id",     "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_client_secret = {"ab_client_secret", "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
+static accelbyte::settings::InMemorySettings settings;
 
 static void InitHttpExecutor()
 {
@@ -64,8 +67,14 @@ void ab_login_with_device_id(ab_instance_t* instance)
     const char* id     = ab_client_id.string[0]     ? ab_client_id.string     : inst->GetClientId();
     const char* secret = ab_client_secret.string[0] ? ab_client_secret.string : inst->GetClientSecret();
 
-    inst->GetLogin().LoginWithDeviceId(url, id, secret);
+    if (url    && url[0])    settings.set_server_url(url);
+    if (id     && id[0])     settings.set_client_id(id);
+    if (secret && secret[0]) settings.set_client_secret(secret);
+    accelbyte::settings::set_global_settings(settings);
+
+    inst->GetLogin().LoginWithDeviceId();
 }
+
 void ab_update(ab_instance_t* instance)               { cast(instance)->Update(); }
 
 ab_login_status_t ab_get_login_status (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetStatus(); }

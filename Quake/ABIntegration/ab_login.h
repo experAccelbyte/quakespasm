@@ -12,15 +12,12 @@
 
 class AB_Login {
 public:
-    AB_Login() = default;
-    explicit AB_Login(ABTaskRunner& task_runner);
+    AB_Login();
     ~AB_Login() = default;
 
     void SetTaskRunner(ABTaskRunner& tr);
 
-    void LoginWithDeviceId(const char* server_url,
-                           const char* client_id,
-                           const char* client_secret);
+    void LoginWithDeviceId();
 
     ab_login_status_t GetStatus()       const;
     const char*       GetUserId()       const;
