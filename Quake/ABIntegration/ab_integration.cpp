@@ -43,9 +43,7 @@ ab_instance_t* ab_create(void)
         Cvar_RegisterVariable(&ab_client_secret);
         cvars_registered = true;
     }
-    return reinterpret_cast<ab_instance_t*>(new ABInstance(
-        &ab_server_url, &ab_client_id, &ab_client_secret
-    ));
+    return reinterpret_cast<ab_instance_t*>(new ABInstance());
 }
 
 void ab_destroy(ab_instance_t* instance)
@@ -57,13 +55,23 @@ void ab_set_server_url(ab_instance_t* instance, const char* url)       { cast(in
 void ab_set_client_id(ab_instance_t* instance, const char* id)         { cast(instance)->SetClientId(id); }
 void ab_set_client_secret(ab_instance_t* instance, const char* secret) { cast(instance)->SetClientSecret(secret); }
 
-void ab_login_with_device_id(ab_instance_t* instance) { cast(instance)->LoginWithDeviceId(); }
+void ab_login_with_device_id(ab_instance_t* instance)
+{
+    ABInstance* inst = cast(instance);
+
+    /* Cvars take precedence over values set via ab_set_*(). */
+    const char* url    = ab_server_url.string[0]    ? ab_server_url.string    : inst->GetServerUrl();
+    const char* id     = ab_client_id.string[0]     ? ab_client_id.string     : inst->GetClientId();
+    const char* secret = ab_client_secret.string[0] ? ab_client_secret.string : inst->GetClientSecret();
+
+    inst->GetLogin().LoginWithDeviceId(url, id, secret);
+}
 void ab_update(ab_instance_t* instance)               { cast(instance)->Update(); }
 
-ab_login_status_t ab_get_login_status (const ab_instance_t* instance) { return cast(instance)->GetLoginStatus(); }
-const char*       ab_get_user_id      (const ab_instance_t* instance) { return cast(instance)->GetUserId(); }
-const char*       ab_get_display_name (const ab_instance_t* instance) { return cast(instance)->GetDisplayName(); }
-const char*       ab_get_error_message(const ab_instance_t* instance) { return cast(instance)->GetErrorMessage(); }
+ab_login_status_t ab_get_login_status (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetStatus(); }
+const char*       ab_get_user_id      (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetUserId(); }
+const char*       ab_get_display_name (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetDisplayName(); }
+const char*       ab_get_error_message(const ab_instance_t* instance) { return cast(instance)->GetLogin().GetErrorMessage(); }
 
 void ab_stat_update(ab_instance_t* instance, const char* stat_code, float value, ab_stat_strategy_t strategy)
 {
