@@ -71,7 +71,7 @@ void AB_Login::SetTaskRunner(ABTaskRunner& tr)
     task_runner_ = &tr;
 }
 
-void AB_Login::LoginWithDeviceId()
+void AB_Login::LoginWithDeviceId(ab_login_success_callback_t on_success, void* userdata)
 {
     Con_Printf("AccelByte: Logging in with device ID...\n");
 
@@ -84,10 +84,12 @@ void AB_Login::LoginWithDeviceId()
         status_ = AB_LOGIN_IN_PROGRESS;
     }
 
-    login_future_ = std::async(std::launch::async, [params, this]() {
+    login_future_ = std::async(std::launch::async, [params, on_success, userdata, this]() {
         accelbyte::user::UserLogin::login_with_device_id(
             params,
-            [this](accelbyte::memory::SharedPtr<accelbyte::user::User> user) { OnLoginSuccess(user); },
+            [on_success, userdata, this](accelbyte::memory::SharedPtr<accelbyte::user::User> user) {
+                OnLoginSuccess(user, on_success, userdata);
+            },
             [this](accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket) {
                 OnLoginQueued(ticket);
             },
@@ -125,21 +127,29 @@ accelbyte::memory::SharedPtr<accelbyte::user::User> AB_Login::GetCurrentUser() c
     return current_user_;
 }
 
-void AB_Login::OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user)
+void AB_Login::OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user,
+                               ab_login_success_callback_t on_success, void* userdata)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     current_user_ = user;
-    user_id_ = user->user_id().c_str();
+    user_id_      = user->user_id().c_str();
     display_name_ = user->display_name().c_str();
-    status_ = AB_LOGIN_SUCCESS;
+    status_       = AB_LOGIN_SUCCESS;
     queue_ticket_ = nullptr;
 
     if (task_runner_)
         task_runner_->queue_task(
-            [](const accelbyte::String& token) {
+            [](const accelbyte::String& token, const std::string& user_id,
+               const std::string& display_name, ab_login_success_callback_t cb, void* ud) {
                 Con_Printf("AccelByte: Login successful! Token: %s\n", token.c_str());
+                if (cb)
+                    cb(user_id.c_str(), display_name.c_str(), ud);
             },
-            user->credential()->access_token().value());
+            user->credential()->access_token().value(),
+            user_id_,
+            display_name_,
+            on_success,
+            userdata);
 }
 
 void AB_Login::OnLoginQueued(accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket)

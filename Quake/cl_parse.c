@@ -1163,7 +1163,16 @@ void CL_ParseServerMessage (void)
 			i = MSG_ReadByte ();
 			if (i >= cl.maxclients)
 				Host_Error ("CL_ParseServerMessage: svc_updatefrags > MAX_SCOREBOARD");
-			cl.scores[i].frags = MSG_ReadShort ();
+			{
+				int new_frags = MSG_ReadShort();
+				if (!cls.demoplayback
+					&& i == cl.viewentity - 1
+					&& new_frags > cl.scores[i].frags)
+				{
+					ab_update_user_stat(g_ab_instance, "qfrag", 1.0f, 1);
+				}
+				cl.scores[i].frags = new_frags;
+			}
 			break;
 
 		case svc_updatecolors:

@@ -58,7 +58,7 @@ void ab_set_server_url(ab_instance_t* instance, const char* url)       { cast(in
 void ab_set_client_id(ab_instance_t* instance, const char* id)         { cast(instance)->SetClientId(id); }
 void ab_set_client_secret(ab_instance_t* instance, const char* secret) { cast(instance)->SetClientSecret(secret); }
 
-void ab_login_with_device_id(ab_instance_t* instance)
+void ab_login_with_device_id(ab_instance_t* instance, ab_login_success_callback_t on_success, void* userdata)
 {
     ABInstance* inst = cast(instance);
 
@@ -72,7 +72,7 @@ void ab_login_with_device_id(ab_instance_t* instance)
     if (secret && secret[0]) settings.set_client_secret(secret);
     accelbyte::settings::set_global_settings(settings);
 
-    inst->GetLogin().LoginWithDeviceId();
+    inst->GetLogin().LoginWithDeviceId(on_success, userdata);
 }
 
 void ab_update(ab_instance_t* instance)               { cast(instance)->Update(); }

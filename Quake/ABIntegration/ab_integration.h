@@ -23,11 +23,15 @@ typedef struct ab_instance_t ab_instance_t;
 ab_instance_t* ab_create(void);
 void           ab_destroy(ab_instance_t* instance);
 
+/* Called on the main thread after a successful login.
+ * user_id and display_name are valid only for the duration of the call. */
+typedef void (*ab_login_success_callback_t)(const char* user_id, const char* display_name, void* userdata);
+
 void ab_set_server_url   (ab_instance_t* instance, const char* url);
 void ab_set_client_id    (ab_instance_t* instance, const char* id);
 void ab_set_client_secret(ab_instance_t* instance, const char* secret);
 
-void ab_login_with_device_id(ab_instance_t* instance);
+void ab_login_with_device_id(ab_instance_t* instance, ab_login_success_callback_t on_success, void* userdata);
 void ab_update              (ab_instance_t* instance);
 
 ab_login_status_t ab_get_login_status  (const ab_instance_t* instance);

@@ -27,6 +27,21 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "ABIntegration/ab_integration.h"
 extern ab_instance_t* g_ab_instance;
 static qboolean ab_login_triggered = false;
+
+static void AB_OnLoginSuccess(const char* user_id, const char* display_name, void* userdata)
+{
+    (void)display_name;
+    (void)userdata;
+    cvar_t* name_cvar = Cvar_FindVar("_cl_name");
+    if (name_cvar)
+    {
+        unsigned int saved_flags = name_cvar->flags;
+        name_cvar->flags &= ~CVAR_ARCHIVE;
+        Cvar_SetQuick(name_cvar, user_id);
+        name_cvar->flags = saved_flags;
+    }
+    Con_Printf("AccelByte: Player name set to user ID %s\n", user_id);
+}
 #endif
 
 void (*vid_menucmdfn)(void); //johnfitz
@@ -267,7 +282,7 @@ void M_Menu_Main_f (void)
 	if (!ab_login_triggered)
 	{
 		ab_login_triggered = true;
-		ab_login_with_device_id(g_ab_instance);
+		ab_login_with_device_id(g_ab_instance, AB_OnLoginSuccess, NULL);
 	}
 #endif
 
@@ -2592,7 +2607,7 @@ typedef struct
 static const lb_config_t lb_configs[] =
 {
 	{ "monsterkill", "Monster Kill", "monsterkillseason" },
-	// { "YOUR_LB_CODE_2", "Leaderboard 2", "YOUR_CYCLE_ID_2" },
+	{ "frags", "Frags", "monsterkillseason" },
 };
 
 #define LB_CONFIG_COUNT	((int)(sizeof(lb_configs) / sizeof(lb_configs[0])))

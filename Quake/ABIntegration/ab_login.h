@@ -17,7 +17,7 @@ public:
 
     void SetTaskRunner(ABTaskRunner& tr);
 
-    void LoginWithDeviceId();
+    void LoginWithDeviceId(ab_login_success_callback_t on_success, void* userdata);
 
     ab_login_status_t GetStatus()       const;
     const char*       GetUserId()       const;
@@ -27,7 +27,8 @@ public:
     accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
 
 private:
-    void OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user);
+    void OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user,
+                        ab_login_success_callback_t on_success, void* userdata);
     void OnLoginQueued(accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket);
     void OnLoginError(const accelbyte::Error& error);
 
