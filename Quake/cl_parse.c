@@ -269,6 +269,9 @@ void CL_KeepaliveMessage (void)
 	lastmsg = time;
 
 // write out a nop
+	if (!NET_CanSendMessage (cls.netcon))
+		return;
+
 	Con_Printf ("--> client to server keepalive\n");
 
 	MSG_WriteByte (&cls.message, clc_nop);
