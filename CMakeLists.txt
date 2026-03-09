@@ -222,6 +222,11 @@ endif()
 if(USE_ACCELBYTE_GAMESDK)
     set(AB_INTEGRATION_SOURCES
         ${QUAKE_DIR}/ABIntegration/ab_integration.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_instance.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_login.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_statistic.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_cycle.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_leaderboard.cpp
         ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
     )
 endif()
@@ -342,6 +347,7 @@ find_package(accelbyte-gamesdk REQUIRED)
         accelbyte-gamesdk::lobby
         accelbyte-gamesdk::settings
         abcnl-codegen::social
+        abcnl-codegen::leaderboard
         abcnl::curl_http_executor
     )
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
