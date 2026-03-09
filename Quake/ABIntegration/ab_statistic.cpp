@@ -112,13 +112,51 @@ void AB_Statistic::FetchStats(
         return;
     }
 
-    // TODO: verify exact SDK header/symbol for list_user_stat_items
-    if (task_runner_)
-        task_runner_->queue_task([]() {
-            Con_Printf("AccelByte: FetchStats — SDK call not yet implemented\n");
-        });
-    (void)stat_codes;
-    (void)count;
+    PruneFutures();
+
+    std::string user_id = user->user_id().c_str();
+
+    accelbyte::Vector<accelbyte::String> codes;
+    for (int i = 0; i < count; i++)
+        codes.push_back(stat_codes[i]);
+
+    futures_.push_back(std::async(std::launch::async,
+        [this, user, user_id, codes]()
+    {
+        accelbyte::social::user_statistic::GetUserStatItemsValueV2 request;
+        request.user_id    = user_id.c_str();
+        request.stat_codes = codes;
+
+        const accelbyte::tls::SecurityAuthorization& auth = *user;
+
+        accelbyte::social::UserStatistic::get_user_stat_items_value_v2(
+            auth,
+            request,
+            [this](const accelbyte::Vector<accelbyte::social::model::UserStatItemValue>& results) {
+                int cached_count = 0;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    for (const auto& item : results) {
+                        if (item.stat_code.has_value() && item.value.has_value()) {
+                            cache_[item.stat_code.value().c_str()] = item.value.value();
+                            cached_count++;
+                        }
+                    }
+                }
+                if (task_runner_)
+                    task_runner_->queue_task([cached_count]() {
+                        Con_Printf("AccelByte: Fetched and cached %d stat item(s)\n", cached_count);
+                    });
+            },
+            [this](const accelbyte::Error& error) {
+                std::string msg = error.what().c_str();
+                if (task_runner_)
+                    task_runner_->queue_task([msg]() {
+                        Con_Printf("AccelByte: FetchStats failed - %s\n", msg.c_str());
+                    });
+            }
+        );
+    }));
 }
 
 void AB_Statistic::BulkUpdateStats(
@@ -134,15 +172,72 @@ void AB_Statistic::BulkUpdateStats(
         return;
     }
 
-    // TODO: verify exact SDK header/symbol for bulk_update_user_stat_items_v2
-    if (task_runner_)
-        task_runner_->queue_task([]() {
-            Con_Printf("AccelByte: BulkUpdateStats — SDK call not yet implemented\n");
-        });
-    (void)stat_codes;
-    (void)values;
-    (void)count;
-    (void)strategy;
+    using UpdateStrategy = accelbyte::social::model::StatItemUpdates::UpdateStrategy;
+    UpdateStrategy update_strategy;
+    switch (strategy)
+    {
+    case 0:  update_strategy = UpdateStrategy::OVERRIDE;   break;
+    case 1:  update_strategy = UpdateStrategy::INCREMENT;  break;
+    case 2:  update_strategy = UpdateStrategy::MAX;        break;
+    case 3:  update_strategy = UpdateStrategy::MIN;        break;
+    default:
+        if (task_runner_)
+            task_runner_->queue_task([strategy]() {
+                Con_Printf("AccelByte: BulkUpdateStats invalid strategy %d"
+                    " (0=OVERRIDE 1=INCREMENT 2=MAX 3=MIN)\n", strategy);
+            });
+        return;
+    }
+
+    PruneFutures();
+
+    std::string user_id = user->user_id().c_str();
+
+    accelbyte::Vector<accelbyte::social::model::StatItemUpdates> items;
+    for (int i = 0; i < count; i++) {
+        accelbyte::social::model::StatItemUpdates item;
+        item.stat_code       = stat_codes[i];
+        item.update_strategy = update_strategy;
+        item.value           = values[i];
+        items.push_back(item);
+    }
+
+    futures_.push_back(std::async(std::launch::async,
+        [this, user, user_id, items]()
+    {
+        accelbyte::social::user_statistic::UpdateUsersStatItemsValueV2 request;
+        request.user_id = user_id.c_str();
+        request.body    = items;
+
+        const accelbyte::tls::SecurityAuthorization& auth = *user;
+
+        accelbyte::social::UserStatistic::update_users_stat_items_value_v2(
+            auth,
+            request,
+            [this, item_count = items.size()](const accelbyte::Vector<accelbyte::social::model::StatOperations>& results) {
+                int success_count = 0;
+                int fail_count    = 0;
+                for (const auto& op : results) {
+                    if (op.success.has_value() && op.success.value())
+                        success_count++;
+                    else
+                        fail_count++;
+                }
+                if (task_runner_)
+                    task_runner_->queue_task([item_count, success_count, fail_count]() {
+                        Con_Printf("AccelByte: BulkUpdateStats %zu item(s): %d succeeded, %d failed\n",
+                            item_count, success_count, fail_count);
+                    });
+            },
+            [this](const accelbyte::Error& error) {
+                std::string msg = error.what().c_str();
+                if (task_runner_)
+                    task_runner_->queue_task([msg]() {
+                        Con_Printf("AccelByte: BulkUpdateStats failed - %s\n", msg.c_str());
+                    });
+            }
+        );
+    }));
 }
 
 bool AB_Statistic::GetCachedValue(const char* stat_code, float* out_value) const
