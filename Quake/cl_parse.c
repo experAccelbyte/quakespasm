@@ -1235,7 +1235,9 @@ void CL_ParseServerMessage (void)
 		case svc_killedmonster:
 			cl.stats[STAT_MONSTERS]++;
 			// Whenever a monster dies, save the current cl.stats[STAT_MONSTERS] value.
-			ab_update_user_stat(g_ab_instance, "qmonsterkill", 1.0f, 1);
+			if (!cls.demoplayback) {
+				ab_update_user_stat(g_ab_instance, "qmonsterkill", 1.0f, 1);
+			}
 			break;
 
 		case svc_foundsecret:
