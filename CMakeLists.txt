@@ -222,6 +222,7 @@ endif()
 if(USE_ACCELBYTE_GAMESDK)
     set(AB_INTEGRATION_SOURCES
         ${QUAKE_DIR}/ABIntegration/ab_integration.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_p2p.cpp
         ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
         ${QUAKE_DIR}/ABIntegration/ams.cpp
         ${QUAKE_DIR}/ABIntegration/easywsclient.cpp
@@ -360,6 +361,7 @@ if(USE_ACCELBYTE_GAMESDK)
     target_link_libraries(quakespasm PRIVATE
         accelbyte-gamesdk::user
         accelbyte-gamesdk::lobby
+        accelbyte-gamesdk::p2p_connection
         accelbyte-gamesdk::settings
         abcnl-codegen::social
         abcnl::curl_http_executor

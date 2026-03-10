@@ -4,6 +4,7 @@
  */
 
 #include "ab_integration.h"
+#include "ab_p2p.h"
 
 #ifdef DEBUG
 #undef DEBUG
@@ -83,7 +84,7 @@ static cvar_t ab_match_map = {"ab_match_map", "start", CVAR_ARCHIVE, 0.0f, NULL,
 //------------------------------------------------------------------------------
 // Internal state
 //------------------------------------------------------------------------------
-static std::mutex g_mutex;
+std::mutex g_mutex;
 static ab_login_status_t g_login_status = AB_LOGIN_IDLE;
 static std::string g_user_id;
 static std::string g_display_name;
@@ -96,7 +97,7 @@ static accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> g_q
 static double g_last_queue_poll = 0.0;
 
 // User credential storage
-static accelbyte::memory::SharedPtr<accelbyte::user::User> g_current_user;
+accelbyte::memory::SharedPtr<accelbyte::user::User> g_current_user;
 
 // Settings instance
 static accelbyte::settings::InMemorySettings g_settings;
@@ -119,12 +120,12 @@ static int g_session_version = 0;
 
 // Lobby state
 static std::shared_ptr<accelbyte::lobby::Lobby> g_lobby;
-static accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> g_lobby_connection;
+accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> g_lobby_connection;
 
 // Async futures storage
 static std::future<void> g_matchmake_future;
 
-static ABTaskRunner runner;
+ABTaskRunner runner;
 
 //------------------------------------------------------------------------------
 // AB_TryConnectFromDSInfo — extract IP/port from DS info and connect
@@ -491,6 +492,8 @@ void AB_Init(void)
 
     g_initialized = true;
 
+    ABP2P_Init();
+
     // CURL HTTP EXECUTOR
     auto curlExecutor = std::make_shared<accelbyte::http::CurlRequestExecutorFactory>();
     accelbyte::http::RequestExecutorFactory::set_executor_factory(curlExecutor);
@@ -507,6 +510,8 @@ void AB_Shutdown(void)
     {
         return;
     }
+
+    ABP2P_Shutdown();
 
     std::lock_guard<std::mutex> lock(g_mutex);
 
@@ -665,6 +670,8 @@ void AB_Update(void)
             (void)e; // Silently ignore read errors for now
         }
     }
+
+    ABP2P_Update();
 
     runner.execute_task_queue();
 }
@@ -850,8 +857,8 @@ static void AB_StartHosting(void)
     key_dest = key_game;
     m_state = m_none;
 
-    // Publish our host IP to the session so other players can connect
-    AB_PatchSessionWithHostIP();
+    // Start P2P server so other players can connect via AccelByte P2P
+    ABP2P_StartServer();
 }
 
 //------------------------------------------------------------------------------
@@ -928,7 +935,7 @@ static void AB_JoinSession(void)
                 }
                 else
                 {
-                    // P2P session — existing leader/client logic
+                    // P2P session — use AccelByte P2P for connection
                     {
                         std::lock_guard<std::mutex> lock(g_mutex);
                         if (is_leader)
@@ -947,8 +954,9 @@ static void AB_JoinSession(void)
                     else
                     {
                         runner.queue_task([session_id, leader_id](){
-                            Con_Printf("AccelByte: Joined session %s as CLIENT — waiting for host (leader: %s)\n",
+                            Con_Printf("AccelByte: Joined session %s as CLIENT — connecting to host via P2P (leader: %s)\n",
                                 session_id.c_str(), leader_id.c_str());
+                            ABP2P_ConnectToHost(leader_id.c_str());
                         });
                     }
                 }
