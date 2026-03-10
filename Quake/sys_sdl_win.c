@@ -224,6 +224,14 @@ void Sys_Init (void)
 	Sys_SetTimerResolution ();
 	Sys_SetDPIAware ();
 
+	/* Attach to the parent console (if launched from cmd/terminal)
+	   so that Sys_Printf output appears in the terminal. */
+	if (AttachConsole (ATTACH_PARENT_PROCESS))
+	{
+		freopen ("CONOUT$", "w", stdout);
+		freopen ("CONOUT$", "w", stderr);
+	}
+
 	memset (cwd, 0, sizeof(cwd));
 	Sys_GetBasedir(NULL, cwd, sizeof(cwd));
 	host_parms->basedir = cwd;
