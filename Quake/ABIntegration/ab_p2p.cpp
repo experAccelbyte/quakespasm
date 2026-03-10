@@ -229,8 +229,11 @@ static void host_proxy_thread_func(HostClientProxy* proxy)
 //------------------------------------------------------------------------------
 static void server_accept_thread_func()
 {
+	// Signal that we accept connections upfront (force relay for testing)
+	s_p2p_server->set_connection_accepted(true, /*force_relay=*/true);
+
 	runner.queue_task([](){
-		Con_Printf("ABP2P: Server accept thread started\n");
+		Con_Printf("ABP2P: Server accept thread started, accepting connections\n");
 	});
 
 	while (s_server_running)
@@ -244,9 +247,6 @@ static void server_accept_thread_func()
 		auto connections = s_p2p_server->requested_connections();
 		if (connections.size() > 0)
 		{
-			// Accept all pending connections (force relay for testing)
-			s_p2p_server->set_connection_accepted(true, /*force_relay=*/true);
-
 			for (size_t i = 0; i < connections.size(); i++)
 			{
 				auto& conn = connections[i];

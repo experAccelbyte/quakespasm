@@ -31,6 +31,10 @@
 #include <accelbyte/cpp_web_socket/CppWebSocketFactory.h>
 #include <accelbyte/web_socket/WebSocketFactory.h>
 
+// P2P connection headers
+#include <accelbyte/p2p_connection/P2PConnectionFactory.h>
+#include <accelbyte/libjuice_p2p_connection/LibjuiceP2PConnectionFactory.h>
+
 // Session headers
 #include <accelbyte/session/SessionService.h>
 #include <accelbyte/session/GameSession.h>
@@ -502,6 +506,11 @@ void AB_Init(void)
     auto wsFactory = accelbyte::memory::make_shared_ptr<accelbyte::cpp_web_socket::CppWebSocketFactory>();
     accelbyte::web_socket::WebSocketFactory::set_web_socket_factory(wsFactory);
     Con_Printf("AccelByte: WebSocket factory registered\n");
+
+    // P2P connection factory — needed for ICE/TURN P2P connections
+    auto p2pFactory = accelbyte::memory::make_shared_ptr<accelbyte::libjuice_p2p_connection::LibjuiceP2PConnectionFactory>();
+    accelbyte::p2p_connection::P2PConnectionFactory::set_p2p_connection_factory(p2pFactory);
+    Con_Printf("AccelByte: P2P connection factory registered\n");
 }
 
 void AB_Shutdown(void)

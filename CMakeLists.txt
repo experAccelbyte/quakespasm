@@ -357,6 +357,11 @@ if(USE_ACCELBYTE_GAMESDK)
         PATHS "${ACCELBYTE_LIB_DIR}"
         NO_DEFAULT_PATH
     )
+    find_library(ACCELBYTE_LIBJUICE_P2P_LIB
+        NAMES abcnl-libjuice_p2p_connection
+        PATHS "${ACCELBYTE_LIB_DIR}"
+        NO_DEFAULT_PATH
+    )
 
     target_link_libraries(quakespasm PRIVATE
         accelbyte-gamesdk::user
@@ -372,6 +377,13 @@ if(USE_ACCELBYTE_GAMESDK)
         target_link_libraries(quakespasm PRIVATE ${ACCELBYTE_CPP_WEBSOCKET_LIB})
     else()
         message(WARNING "AccelByte cpp_web_socket library not found, lobby connections may fail")
+    endif()
+
+    # Link libjuice P2P connection factory
+    if(ACCELBYTE_LIBJUICE_P2P_LIB)
+        target_link_libraries(quakespasm PRIVATE ${ACCELBYTE_LIBJUICE_P2P_LIB})
+    else()
+        message(WARNING "AccelByte libjuice_p2p_connection library not found, P2P connections may fail")
     endif()
 
     target_compile_definitions(quakespasm PRIVATE USE_ACCELBYTE_GAMESDK ACCELBYTE_BUILD_SHARED_DEFINE)
