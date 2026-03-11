@@ -84,6 +84,7 @@ static cvar_t ab_client_id = {"ab_client_id", "", CVAR_ARCHIVE, 0.0f, NULL, NULL
 static cvar_t ab_client_secret = {"ab_client_secret", "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_match_pool = {"ab_match_pool", "quake_ffa", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_match_map = {"ab_match_map", "start", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
+static cvar_t ab_device_id = {"ab_device_id", "", CVAR_NONE, 0.0f, NULL, NULL, NULL};
 
 //------------------------------------------------------------------------------
 // Internal state
@@ -487,9 +488,14 @@ void AB_Init(void)
     Cvar_RegisterVariable(&ab_client_secret);
     Cvar_RegisterVariable(&ab_match_pool);
     Cvar_RegisterVariable(&ab_match_map);
+    Cvar_RegisterVariable(&ab_device_id);
 
-    // Generate device ID
-    g_device_id = GenerateDeviceId();
+    // Use custom device ID if provided on command line, otherwise generate one
+    int i = COM_CheckParm("-device_id");
+    if (i && i < com_argc - 1)
+        g_device_id = com_argv[i + 1];
+    else
+        g_device_id = GenerateDeviceId();
 
     Con_Printf("AccelByte: SDK initialized\n");
     Con_Printf("AccelByte: Device ID: %s\n", g_device_id.c_str());
@@ -630,8 +636,12 @@ void AB_LoginWithDeviceId(void)
         Con_Printf("AccelByte: Match2Service initialized\n");
     }
 
+    // Re-check device ID cvar at login time (config may have set it after init)
+    if (ab_device_id.string[0])
+        g_device_id = ab_device_id.string;
+
     // Login with device ID
-    Con_Printf("AccelByte: Logging in with device ID...\n");
+    Con_Printf("AccelByte: Logging in with device ID: %s\n", g_device_id.c_str());
 
     accelbyte::user::parameters::LoginWithDeviceId params;
     params.device_id = g_device_id.c_str();

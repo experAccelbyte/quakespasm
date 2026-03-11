@@ -238,7 +238,11 @@ sys_socket_t WINS_OpenSocket (int port)
 	address.sin_addr.s_addr = myAddr;
 	address.sin_port = htons((unsigned short)port);
 	if (bind (newsocket, (struct sockaddr *)&address, sizeof(address)) == 0)
+	{
+		Con_SafePrintf("WINS_OpenSocket: bound socket %d to %s:%d\n",
+			(int)newsocket, inet_ntoa(address.sin_addr), port);
 		return newsocket;
+	}
 
 	if (tcpipAvailable)
 	{
@@ -418,7 +422,15 @@ int WINS_Write (sys_socket_t socketid, byte *buf, int len, struct qsockaddr *add
 		int err = SOCKETERRNO;
 		if (err == NET_EWOULDBLOCK)
 			return 0;
-		Con_SafePrintf ("WINS_Write, sendto: %s\n", socketerror(err));
+		{
+			struct sockaddr_in *sin = (struct sockaddr_in *)addr;
+			Con_SafePrintf ("WINS_Write, sendto: %s (dest %s:%d, family %d, socket %d)\n",
+				socketerror(err),
+				inet_ntoa(sin->sin_addr),
+				ntohs(sin->sin_port),
+				sin->sin_family,
+				(int)socketid);
+		}
 	}
 	return ret;
 }

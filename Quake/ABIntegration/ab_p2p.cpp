@@ -84,6 +84,7 @@ extern ABTaskRunner runner;
 // Internal state
 //------------------------------------------------------------------------------
 static std::mutex s_p2p_mutex;
+static unsigned long s_local_addr = INADDR_LOOPBACK; // resolved local IP for proxy sockets (network byte order)
 
 // Host state
 static std::shared_ptr<accelbyte::p2p_connection::P2PServer> s_p2p_server;
@@ -110,7 +111,31 @@ static SOCKET s_client_proxy_socket = INVALID_SOCKET;
 static std::atomic<int> s_client_proxy_port{0};
 
 //------------------------------------------------------------------------------
-// Utility: create a non-blocking UDP socket bound to 127.0.0.1 on an ephemeral port
+// Resolve local IP address (same logic as Quake's WINS_GetLocalAddress)
+//------------------------------------------------------------------------------
+static void resolve_local_addr(void)
+{
+	char hostname[256];
+	if (gethostname(hostname, sizeof(hostname)) != 0)
+	{
+		s_local_addr = htonl(INADDR_LOOPBACK);
+		return;
+	}
+	hostname[sizeof(hostname) - 1] = 0;
+
+	struct hostent* host = gethostbyname(hostname);
+	if (host && host->h_addr_list[0])
+	{
+		s_local_addr = *(unsigned long*)host->h_addr_list[0];
+	}
+	else
+	{
+		s_local_addr = htonl(INADDR_LOOPBACK);
+	}
+}
+
+//------------------------------------------------------------------------------
+// Utility: create a non-blocking UDP socket bound to local IP on an ephemeral port
 //------------------------------------------------------------------------------
 static SOCKET create_local_udp_socket(int* out_port)
 {
@@ -121,7 +146,7 @@ static SOCKET create_local_udp_socket(int* out_port)
 	struct sockaddr_in addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	addr.sin_addr.s_addr = s_local_addr;
 	addr.sin_port = 0; // ephemeral
 
 	if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
@@ -154,9 +179,114 @@ static SOCKET create_local_udp_socket(int* out_port)
 }
 
 //------------------------------------------------------------------------------
+// Stream framing protocol for P2P data channel
+//
+// The P2P Connection::read() returns all data accumulated since the last read,
+// concatenated into a single buffer. We cannot rely on message boundaries.
+//
+// Protocol: each UDP datagram is sent as a length-prefixed message:
+//   [2 bytes] length (network byte order) — size of the UDP datagram
+//   [N bytes] payload — the raw UDP datagram
+//
+// The receiver maintains a stream buffer, appends each read() result,
+// and extracts complete length-prefixed messages from it.
+//------------------------------------------------------------------------------
+
+// Max bytes per P2P write call — must be under TURN relay MTU (~1200).
+// Leave headroom for TURN framing overhead.
+static const int P2P_WRITE_CHUNK_SIZE = 1100;
+
+static void p2p_send_framed(
+	std::shared_ptr<accelbyte::p2p_connection::Connection>& conn,
+	const char* data, int len)
+{
+	// Build the framed message: 2-byte length header + payload
+	std::vector<char> msg(2 + len);
+	uint16_t net_len = htons((uint16_t)len);
+	memcpy(msg.data(), &net_len, 2);
+	memcpy(msg.data() + 2, data, len);
+
+	// Send in chunks to stay within TURN relay MTU
+	size_t offset = 0;
+	size_t total = msg.size();
+	while (offset < total)
+	{
+		size_t chunk = total - offset;
+		if (chunk > (size_t)P2P_WRITE_CHUNK_SIZE)
+			chunk = (size_t)P2P_WRITE_CHUNK_SIZE;
+		conn->write(msg.data() + offset, chunk);
+		offset += chunk;
+	}
+}
+
+// Stream buffer that accumulates P2P reads and extracts framed messages
+struct StreamBuffer {
+	std::vector<char> buf;
+
+	void append(const char* data, size_t len)
+	{
+		buf.insert(buf.end(), data, data + len);
+	}
+
+	// Extract the next complete message. Returns size, or 0 if incomplete.
+	// On success, copies the payload into out_data and removes it from the buffer.
+	int extract(char* out_data, int out_max)
+	{
+		if (buf.size() < 2)
+			return 0;
+
+		uint16_t net_len;
+		memcpy(&net_len, buf.data(), 2);
+		int msg_len = ntohs(net_len);
+
+		if (msg_len <= 0 || msg_len > out_max)
+		{
+			// Invalid length — discard the whole buffer to resync
+			buf.clear();
+			return 0;
+		}
+
+		if ((int)buf.size() < 2 + msg_len)
+			return 0; // incomplete, wait for more data
+
+		memcpy(out_data, buf.data() + 2, msg_len);
+		buf.erase(buf.begin(), buf.begin() + 2 + msg_len);
+		return msg_len;
+	}
+};
+
+//------------------------------------------------------------------------------
 // Host: proxy thread for a single P2P client
 // Bridges P2P read/write <-> UDP to Quake's listen server port
 //------------------------------------------------------------------------------
+// Quake net protocol constants (from net_defs.h)
+#define NETFLAG_CTL		0x80000000
+#define CCREP_ACCEPT	0x81
+
+// Read a big-endian 32-bit int from a buffer (for packet header)
+static int32_t read_big_long(const char* buf)
+{
+	const unsigned char* p = (const unsigned char*)buf;
+	return ((int32_t)p[0] << 24) | ((int32_t)p[1] << 16) | ((int32_t)p[2] << 8) | p[3];
+}
+
+// Read a little-endian 32-bit int from a buffer (for MSG_WriteLong payload)
+static int32_t read_little_long(const char* buf)
+{
+	const unsigned char* p = (const unsigned char*)buf;
+	return p[0] | ((int32_t)p[1] << 8) | ((int32_t)p[2] << 16) | ((int32_t)p[3] << 24);
+}
+
+// Write a little-endian 32-bit int to a buffer (for MSG_ReadLong payload)
+static void write_little_long(char* buf, int32_t val)
+{
+	unsigned char* p = (unsigned char*)buf;
+	p[0] = val & 0xff;
+	p[1] = (val >> 8) & 0xff;
+	p[2] = (val >> 16) & 0xff;
+	p[3] = (val >> 24) & 0xff;
+}
+
 static void host_proxy_thread_func(HostClientProxy* proxy)
 {
 	const int QUAKE_SERVER_PORT = net_hostport;
@@ -173,11 +303,11 @@ static void host_proxy_thread_func(HostClientProxy* proxy)
 		return;
 	}
 
-	// Target: Quake listen server on localhost
+	// Target: Quake listen server on local IP
 	struct sockaddr_in server_addr;
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	server_addr.sin_addr.s_addr = s_local_addr;
 	server_addr.sin_port = htons((u_short)QUAKE_SERVER_PORT);
 
 	runner.queue_task([peer_id = proxy->peer_id, local_port](){
@@ -185,29 +315,62 @@ static void host_proxy_thread_func(HostClientProxy* proxy)
 	});
 
 	char udp_buf[NET_MAXMESSAGE];
+	StreamBuffer stream;
 
 	while (proxy->running)
 	{
 		bool did_work = false;
 
-		// P2P -> UDP: read from P2P connection, send to Quake server
+		// P2P -> UDP: read stream data from P2P, extract framed messages, send to Quake server
 		accelbyte::Vector<char> p2p_data;
 		auto err = proxy->connection->read(p2p_data);
 		if (err.type() == accelbyte::Error::ok && p2p_data.size() > 0)
 		{
-			sendto(proxy->udp_socket, p2p_data.data(), (int)p2p_data.size(), 0,
-				(struct sockaddr*)&server_addr, sizeof(server_addr));
+			stream.append(p2p_data.data(), p2p_data.size());
+			int msg_len;
+			while ((msg_len = stream.extract(udp_buf, sizeof(udp_buf))) > 0)
+			{
+				sendto(proxy->udp_socket, udp_buf, msg_len, 0,
+					(struct sockaddr*)&server_addr, sizeof(server_addr));
+			}
 			did_work = true;
 		}
 
-		// UDP -> P2P: read from Quake server response, write to P2P connection
+		// UDP -> P2P: read from Quake server, intercept CCREP_ACCEPT, frame and send via P2P
 		struct sockaddr_in from_addr;
 		socklen_t from_len = sizeof(from_addr);
 		int recv_len = recvfrom(proxy->udp_socket, udp_buf, sizeof(udp_buf), 0,
 			(struct sockaddr*)&from_addr, &from_len);
 		if (recv_len > 0)
 		{
-			proxy->connection->write(udp_buf, (size_t)recv_len);
+			// Intercept CCREP_ACCEPT to track server's new game port and rewrite it
+			// Packet format: [4 bytes: BigLong(NETFLAG_CTL|len)] [1 byte: CCREP_ACCEPT] [4 bytes: BigLong(port)]
+			if (recv_len >= 9)
+			{
+				int32_t header = read_big_long(udp_buf);
+				int pkt_len = header & 0x0000ffff;  // low 16 bits = length
+				int pkt_flags = header & 0xffff0000; // high 16 bits = flags
+
+				if ((pkt_flags & NETFLAG_CTL) && (unsigned char)udp_buf[4] == CCREP_ACCEPT && pkt_len >= 9)
+				{
+					// Read the server's new game port (little-endian, written by MSG_WriteLong)
+					int32_t server_game_port = read_little_long(udp_buf + 5);
+
+					runner.queue_task([peer_id = proxy->peer_id, server_game_port, local_port](){
+						Con_Printf("ABP2P: Intercepted CCREP_ACCEPT for peer %s: server game port %d, rewriting to proxy port %d\n",
+							peer_id.c_str(), server_game_port, local_port);
+					});
+
+					// Update server_addr to point to the server's new game socket
+					server_addr.sin_port = htons((u_short)server_game_port);
+
+					// Rewrite the port in the packet to be our proxy's local port
+					// so the client on the other end keeps talking to the proxy
+					write_little_long(udp_buf + 5, local_port);
+				}
+			}
+
+			p2p_send_framed(proxy->connection, udp_buf, recv_len);
 			did_work = true;
 		}
 
@@ -295,26 +458,56 @@ static void client_proxy_thread_func()
 	char udp_buf[NET_MAXMESSAGE];
 	struct sockaddr_in client_addr;
 	bool have_client_addr = false;
+	StreamBuffer stream;
 
 	runner.queue_task([port = s_client_proxy_port.load()](){
 		Con_Printf("ABP2P: Client proxy thread started on port %d\n", port);
 	});
 
+	int proxy_port = s_client_proxy_port.load();
+
 	while (s_client_running)
 	{
 		bool did_work = false;
 
-		// P2P -> UDP: read from P2P connection (from host), forward to Quake client
+		// P2P -> UDP: read stream data from P2P (from host), extract framed messages, forward to Quake client
 		accelbyte::Vector<char> p2p_data;
 		auto err = s_client_connection->read(p2p_data);
-		if (err.type() == accelbyte::Error::ok && p2p_data.size() > 0 && have_client_addr)
+		if (err.type() == accelbyte::Error::ok && p2p_data.size() > 0)
 		{
-			sendto(s_client_proxy_socket, p2p_data.data(), (int)p2p_data.size(), 0,
-				(struct sockaddr*)&client_addr, sizeof(client_addr));
+			stream.append(p2p_data.data(), p2p_data.size());
+			int msg_len;
+			while ((msg_len = stream.extract(udp_buf, sizeof(udp_buf))) > 0)
+			{
+				// Intercept CCREP_ACCEPT: rewrite port to our proxy port
+				// so the Quake client keeps sending to this proxy
+				if (msg_len >= 9)
+				{
+					int32_t header = read_big_long(udp_buf);
+					int pkt_flags = header & 0xffff0000;
+					int pkt_len = header & 0x0000ffff;
+
+					if ((pkt_flags & NETFLAG_CTL) && (unsigned char)udp_buf[4] == CCREP_ACCEPT && pkt_len >= 9)
+					{
+						int32_t advertised_port = read_little_long(udp_buf + 5);
+						runner.queue_task([advertised_port, proxy_port](){
+							Con_Printf("ABP2P: Client proxy intercepted CCREP_ACCEPT: host advertised port %d, rewriting to proxy port %d\n",
+								advertised_port, proxy_port);
+						});
+						write_little_long(udp_buf + 5, proxy_port);
+					}
+				}
+
+				if (have_client_addr)
+				{
+					sendto(s_client_proxy_socket, udp_buf, msg_len, 0,
+						(struct sockaddr*)&client_addr, sizeof(client_addr));
+				}
+			}
 			did_work = true;
 		}
 
-		// UDP -> P2P: read from Quake client, forward to host via P2P
+		// UDP -> P2P: read from Quake client, frame and forward to host via P2P
 		struct sockaddr_in from_addr;
 		socklen_t from_len = sizeof(from_addr);
 		int recv_len = recvfrom(s_client_proxy_socket, udp_buf, sizeof(udp_buf), 0,
@@ -328,7 +521,7 @@ static void client_proxy_thread_func()
 				have_client_addr = true;
 			}
 
-			s_client_connection->write(udp_buf, (size_t)recv_len);
+			p2p_send_framed(s_client_connection, udp_buf, recv_len);
 			did_work = true;
 		}
 
@@ -350,7 +543,11 @@ extern "C" {
 
 void ABP2P_Init(void)
 {
-	// Nothing to do yet — state is initialized statically
+	resolve_local_addr();
+
+	struct in_addr a;
+	a.s_addr = s_local_addr;
+	Con_Printf("ABP2P: Local address for proxying: %s\n", inet_ntoa(a));
 }
 
 void ABP2P_Shutdown(void)
@@ -535,10 +732,13 @@ void ABP2P_ConnectToHost(const char* peer_id)
 		runner.queue_task([using_relay, port](){
 			Con_Printf("ABP2P: P2P connection established! (relay: %s)\n",
 				using_relay ? "yes" : "no");
-			Con_Printf("ABP2P: Connecting Quake client to 127.0.0.1:%d\n", port);
 
-			// Tell Quake to connect through our proxy
-			Cbuf_AddText(va("connect \"127.0.0.1:%d\"\n", port));
+			struct in_addr a;
+			a.s_addr = s_local_addr;
+			const char* ip = inet_ntoa(a);
+			Con_Printf("ABP2P: Connecting Quake client to %s:%d\n", ip, port);
+
+			Cbuf_AddText(va("connect \"%s:%d\"\n", ip, port));
 			key_dest = key_game;
 			m_state = m_none;
 		});
