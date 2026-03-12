@@ -142,6 +142,33 @@ User Input -> IN_* (SDL events) -> Key/Mouse handling
 
 ---
 
+## AccelByte Integration
+
+Controlled by CMake option `USE_ACCELBYTE_GAMESDK` (default ON). All sources live in `Quake/ABIntegration/`. The SDK itself is under `thirdparties/accelbyte-gamesdk/`.
+
+**File structure:**
+
+| File | Responsibility |
+|------|---------------|
+| `ab_integration.h` | Public C API — opaque `ab_instance_t*` handle, all `ab_*` declarations, enums. The only AB header included by Quake C code. |
+| `ab_integration.cpp` | C wrapper layer. Owns and registers the `ab_server_url / ab_client_id / ab_client_secret` cvars. Resolves credentials at login time and delegates every call to `ABInstance`. |
+| `ab_instance.h/cpp` | `ABInstance` C++ class. Owns `ABTaskRunner` and all subsystem objects. Wires `SetTaskRunner` in its constructor body. Exposes `GetLogin()`, `GetStatistic()`, `GetCycle()`, `GetLeaderboard()`, `GetCurrentUser()`. |
+| `ab_login.h/cpp` | `AB_Login`. Manages the async device-ID login flow, login-queue state, and user identity (`user_id`, `display_name`, `current_user`). Generates the platform device ID at construction. |
+| `ab_statistic.h/cpp` | `AB_Statistic`. Single-stat update, bulk update, and fetch via the AccelByte Social SDK. Flat `stat_code → float` cache. |
+| `ab_cycle.h/cpp` | `AB_Cycle`. Stat-cycle item fetching. Cache keyed `cycle_id → stat_code → float`. |
+| `ab_leaderboard.h/cpp` | `AB_Leaderboard`. All-time and cycle-scoped ranking fetches plus current-user rank. |
+| `ab_task_runner.h/cpp` | `ABTaskRunner`. Thread-safe queue that marshals SDK async callbacks back to the main thread. Drained each frame via `ABInstance::Update()`. |
+
+**Key design invariants:**
+
+* `ab_instance_t*` is `ABInstance*` reinterpret-cast — Quake C code never sees C++ types.
+* Every subsystem stores `ABTaskRunner* task_runner_ = nullptr` and is wired via `SetTaskRunner()` in `ABInstance`'s constructor body, removing member declaration-order dependencies.
+* All `Con_Printf` calls inside async SDK callbacks go through `task_runner_->queue_task(...)`. The subsystem mutex is always released *before* calling `queue_task`.
+* Caches are read-only from the SDK's perspective — only `Fetch*` calls populate them. `BulkUpdateStats` does not update the cache because the v2 bulk response (`StatOperations`) carries no current value.
+* Credential resolution in `ab_login_with_device_id`: cvar value takes precedence over any value set via `ab_set_*()`.
+
+---
+
 ## Key Data Structures
 
 **Global State:**
@@ -279,6 +306,11 @@ cmake --build --preset release
 cd Quake
 make USE_SDL2=1
 ```
+
+### Quick Start (Visual Studio)
+
+Open `Windows/VisualStudio/quakespasm.sln` in Visual Studio 2017 or newer.
+
 ### Dependencies
 
 **Required:**
@@ -368,8 +400,6 @@ When completing tasks:
 | Video/window | `gl_vidsdl.c`, `vid.h` |
 | Model loading | `gl_model.c` |
 | Music playback | `bgmusic.c`, `snd_*.c` (codecs) |
+| AccelByte integration | `Quake/ABIntegration/ab_integration.h` (C API), `ab_instance.h` (C++ core), `ab_login.h`, `ab_statistic.h`, `ab_cycle.h`, `ab_leaderboard.h` |
 
 ---
-
-## Current Goal
-The current goal for this project is to make the dedicated server run in AMS. This includes implementing the watchdog protocol so we can call ready.

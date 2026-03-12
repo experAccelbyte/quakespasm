@@ -1,26 +1,18 @@
 /*
  * AccelByte SDK Integration for QuakeSpasm
- * C++ implementation
+ * C API wrappers — delegates to ABInstance
  */
 
 #include "ab_integration.h"
 #include "ab_p2p.h"
 
-#ifdef DEBUG
-#undef DEBUG
-#endif
+#include "ab_instance.h"
 
-// AccelByte SDK headers
-#include <accelbyte/common/String.h>
-#include <accelbyte/user/UserLogin.h>
-#include <accelbyte/user/User.h>
-#include <accelbyte/user/parameters/LoginWithDeviceId.h>
-#include <accelbyte/settings/InMemorySettings.h>
-#include <accelbyte/settings/global_settings.h>
-#include <accelbyte/common/Error.h>
-#include <accelbyte/iam/models/LoginQueueTicket.h>
 #include <accelbyte/curl_http_executor/CurlRequestExecutorFactory.h>
 #include <accelbyte/http/RequestExecutorFactory.h>
+#include <accelbyte/settings/InMemorySettings.h>
+#include <accelbyte/settings/global_settings.h>
+
 #include <accelbyte/social/UserStatistic.h>
 #include <accelbyte/social/user_statistic/UpdateUserStatItemValueV2.h>
 #include <accelbyte/social/models/UpdateStatItem.h>
@@ -53,59 +45,189 @@
 // Standard library
 #include <string>
 #include <mutex>
-#include <future>
 
-// Quake headers (C linkage)
 extern "C" {
 #include "quakedef.h"
-#include "console.h"
 }
 
-// Forward declarations for Quake C functions
-extern "C" {
-    extern cvar_t* Cvar_FindVar(const char* var_name);
-    extern void Cvar_RegisterVariable(cvar_t* variable);
-    extern double Sys_DoubleTime(void);
-    extern void Cbuf_AddText(const char* text);
-    extern char my_tcpip_address[];
-    extern int net_hostport;
-}
-
-// C++ forward declarations
-static void AB_JoinSession(void);
-static void AB_StartHosting(void);
-static void AB_PatchSessionWithHostIP(void);
-
-//------------------------------------------------------------------------------
-// CVars for AccelByte configuration
-//------------------------------------------------------------------------------
-static cvar_t ab_server_url = {"ab_server_url", "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
-static cvar_t ab_client_id = {"ab_client_id", "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
+static cvar_t ab_server_url    = {"ab_server_url",    "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
+static cvar_t ab_client_id     = {"ab_client_id",     "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_client_secret = {"ab_client_secret", "", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
+
 static cvar_t ab_match_pool = {"ab_match_pool", "quake_ffa", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_match_map = {"ab_match_map", "start", CVAR_ARCHIVE, 0.0f, NULL, NULL, NULL};
 static cvar_t ab_device_id = {"ab_device_id", "", CVAR_NONE, 0.0f, NULL, NULL, NULL};
 
-//------------------------------------------------------------------------------
-// Internal state
-//------------------------------------------------------------------------------
 std::mutex g_mutex;
-static ab_login_status_t g_login_status = AB_LOGIN_IDLE;
-static std::string g_user_id;
-static std::string g_display_name;
-static std::string g_error_message;
-static std::string g_device_id;
-static bool g_initialized = false;
 
-// Login queue handling
-static accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> g_queue_ticket;
-static double g_last_queue_poll = 0.0;
+static accelbyte::settings::InMemorySettings settings;
 
-// User credential storage
-accelbyte::memory::SharedPtr<accelbyte::user::User> g_current_user;
+static void InitHttpExecutor()
+{
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        auto executor = std::make_shared<accelbyte::http::CurlRequestExecutorFactory>();
+        accelbyte::http::RequestExecutorFactory::set_executor_factory(executor);
+    });
+}
 
-// Settings instance
-static accelbyte::settings::InMemorySettings g_settings;
+static ABInstance* cast(ab_instance_t* h)             { return reinterpret_cast<ABInstance*>(h); }
+static const ABInstance* cast(const ab_instance_t* h) { return reinterpret_cast<const ABInstance*>(h); }
+
+extern "C" {
+
+ab_instance_t* ab_create(void)
+{
+    InitHttpExecutor();
+    static bool cvars_registered = false;
+    if (!cvars_registered) {
+        Cvar_RegisterVariable(&ab_server_url);
+        Cvar_RegisterVariable(&ab_client_id);
+        Cvar_RegisterVariable(&ab_client_secret);
+        cvars_registered = true;
+    }
+    return reinterpret_cast<ab_instance_t*>(new ABInstance());
+}
+
+void ab_destroy(ab_instance_t* instance)
+{
+    delete cast(instance);
+}
+
+void ab_set_server_url(ab_instance_t* instance, const char* url)       { cast(instance)->SetServerUrl(url); }
+void ab_set_client_id(ab_instance_t* instance, const char* id)         { cast(instance)->SetClientId(id); }
+void ab_set_client_secret(ab_instance_t* instance, const char* secret) { cast(instance)->SetClientSecret(secret); }
+
+void ab_login_with_device_id(ab_instance_t* instance, ab_login_success_callback_t on_success, void* userdata)
+{
+    ABInstance* inst = cast(instance);
+
+    /* Cvars take precedence over values set via ab_set_*(). */
+    const char* url    = ab_server_url.string[0]    ? ab_server_url.string    : inst->GetServerUrl();
+    const char* id     = ab_client_id.string[0]     ? ab_client_id.string     : inst->GetClientId();
+    const char* secret = ab_client_secret.string[0] ? ab_client_secret.string : inst->GetClientSecret();
+
+    if (url    && url[0])    settings.set_server_url(url);
+    if (id     && id[0])     settings.set_client_id(id);
+    if (secret && secret[0]) settings.set_client_secret(secret);
+    accelbyte::settings::set_global_settings(settings);
+
+    inst->GetLogin().LoginWithDeviceId(on_success, userdata);
+}
+
+void ab_update(ab_instance_t* instance)               { cast(instance)->Update(); }
+
+ab_login_status_t ab_get_login_status (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetStatus(); }
+const char*       ab_get_user_id      (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetUserId(); }
+const char*       ab_get_display_name (const ab_instance_t* instance) { return cast(instance)->GetLogin().GetDisplayName(); }
+const char*       ab_get_error_message(const ab_instance_t* instance) { return cast(instance)->GetLogin().GetErrorMessage(); }
+
+void ab_stat_update(ab_instance_t* instance, const char* stat_code, float value, ab_stat_strategy_t strategy)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetStatistic().UpdateStat(inst->GetCurrentUser(), stat_code, value, (int)strategy);
+}
+
+void ab_stat_fetch(ab_instance_t* instance, const char* const* stat_codes, int count)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetStatistic().FetchStats(inst->GetCurrentUser(), stat_codes, count);
+}
+
+void ab_stat_bulk_update(ab_instance_t* instance, const char* const* stat_codes, const float* values, int count, ab_stat_strategy_t strategy)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetStatistic().BulkUpdateStats(inst->GetCurrentUser(), stat_codes, values, count, (int)strategy);
+}
+
+int ab_stat_get_cached(const ab_instance_t* instance, const char* stat_code, float* out_value)
+{
+    return cast(instance)->GetStatistic().GetCachedValue(stat_code, out_value) ? 1 : 0;
+}
+
+void ab_stat_invalidate_cache(ab_instance_t* instance)
+{
+    cast(instance)->GetStatistic().InvalidateCache();
+}
+
+void ab_cycle_fetch_items(ab_instance_t* instance, const char* cycle_id,
+                           const char* const* stat_codes, int count)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetCycle().FetchCycleItems(inst->GetCurrentUser(), cycle_id, stat_codes, count);
+}
+
+int ab_cycle_get_cached(const ab_instance_t* instance, const char* cycle_id,
+                         const char* stat_code, float* out_value)
+{
+    return cast(instance)->GetCycle().GetCachedValue(cycle_id, stat_code, out_value) ? 1 : 0;
+}
+
+void ab_cycle_invalidate_cache(ab_instance_t* instance)
+{
+    cast(instance)->GetCycle().InvalidateCache();
+}
+
+void ab_leaderboard_fetch_rankings(ab_instance_t* instance,
+    const char* leaderboard_code, int limit, int offset)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetLeaderboard().FetchRankings(inst->GetCurrentUser(), leaderboard_code, limit, offset);
+}
+
+void ab_leaderboard_fetch_cycle_rankings(ab_instance_t* instance,
+    const char* leaderboard_code, const char* cycle_id, int limit, int offset)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetLeaderboard().FetchCycleRankings(
+        inst->GetCurrentUser(), leaderboard_code, cycle_id, limit, offset);
+}
+
+void ab_leaderboard_fetch_user_rank(ab_instance_t* instance, const char* leaderboard_code)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetLeaderboard().FetchUserRank(inst->GetCurrentUser(), leaderboard_code);
+}
+
+int ab_leaderboard_get_rankings(const ab_instance_t* instance,
+    const char* leaderboard_code, ab_rank_entry_t* out, int max_entries)
+{
+    return cast(instance)->GetLeaderboard().GetCachedRankings(leaderboard_code, out, max_entries);
+}
+
+int ab_leaderboard_get_cycle_rankings(const ab_instance_t* instance,
+    const char* leaderboard_code, const char* cycle_id,
+    ab_rank_entry_t* out, int max_entries)
+{
+    return cast(instance)->GetLeaderboard().GetCachedCycleRankings(
+        leaderboard_code, cycle_id, out, max_entries);
+}
+
+int ab_leaderboard_get_user_rank(const ab_instance_t* instance,
+    const char* leaderboard_code, long* out_rank, float* out_point)
+{
+    return cast(instance)->GetLeaderboard().GetCachedUserRank(
+        leaderboard_code, out_rank, out_point) ? 1 : 0;
+}
+
+int ab_leaderboard_get_user_cycle_rank(const ab_instance_t* instance,
+    const char* leaderboard_code, const char* cycle_id,
+    long* out_rank, float* out_point)
+{
+    return cast(instance)->GetLeaderboard().GetCachedUserCycleRank(
+        leaderboard_code, cycle_id, out_rank, out_point) ? 1 : 0;
+}
+
+void ab_leaderboard_invalidate_cache(ab_instance_t* instance)
+{
+    cast(instance)->GetLeaderboard().InvalidateCache();
+}
+
+void ab_update_user_stat(ab_instance_t* instance, const char* stat_code, float value, int strategy)
+{
+    ab_stat_update(instance, stat_code, value, (ab_stat_strategy_t)strategy);
+}
+
 
 // Matchmaking state
 static ab_matchmake_status_t g_matchmake_status = AB_MM_IDLE;
@@ -302,92 +424,7 @@ public:
 };
 
 static std::shared_ptr<DSStatusChangedHandler> g_ds_status_handler;
-//------------------------------------------------------------------------------
-// Device ID generation (Windows)
-//------------------------------------------------------------------------------
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <accelbyte/crypto/md5.h>
 
-static std::string GenerateDeviceId()
-{
-    std::string combined;
-
-    // Get machine GUID from registry
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-        "SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &hKey) == ERROR_SUCCESS)
-    {
-        char guid[256] = {0};
-        DWORD size = sizeof(guid);
-        if (RegQueryValueExA(hKey, "MachineGuid", NULL, NULL, (LPBYTE)guid, &size) == ERROR_SUCCESS)
-        {
-            combined += guid;
-        }
-        RegCloseKey(hKey);
-    }
-
-    // Get volume serial number of C:
-    DWORD serial = 0;
-    if (GetVolumeInformationA("C:\\", NULL, 0, &serial, NULL, NULL, NULL, 0))
-    {
-        combined += std::to_string(serial);
-    }
-
-    // If we couldn't get any system info, use a fallback
-    if (combined.empty())
-    {
-        combined = "quakespasm-default-device";
-    }
-
-    // Hash with MD5 for a consistent format
-    accelbyte::String ab_combined(combined.c_str());
-    return accelbyte::crypto::md5(ab_combined).c_str();
-}
-#else
-// Unix/Linux implementation
-#include <fstream>
-#include <accelbyte/crypto/md5.h>
-
-static std::string GenerateDeviceId()
-{
-    std::string machine_id;
-
-    // Try to read /etc/machine-id (systemd)
-    std::ifstream file("/etc/machine-id");
-    if (file.is_open())
-    {
-        std::getline(file, machine_id);
-        file.close();
-    }
-
-    // Fallback to /var/lib/dbus/machine-id
-    if (machine_id.empty())
-    {
-        std::ifstream dbus_file("/var/lib/dbus/machine-id");
-        if (dbus_file.is_open())
-        {
-            std::getline(dbus_file, machine_id);
-            dbus_file.close();
-        }
-    }
-
-    // If we couldn't get any system info, use a fallback
-    if (machine_id.empty())
-    {
-        machine_id = "quakespasm-default-device";
-    }
-
-    // Hash with MD5 for a consistent format
-    accelbyte::String ab_machine_id(machine_id.c_str());
-    return accelbyte::crypto::md5(ab_machine_id).c_str();
-}
-#endif
-
-//------------------------------------------------------------------------------
-// Callback handlers
-//------------------------------------------------------------------------------
 static void OnLoginSuccess(const accelbyte::memory::SharedPtr<accelbyte::user::User> user)
 {
     {
@@ -447,33 +484,6 @@ static void OnLoginSuccess(const accelbyte::memory::SharedPtr<accelbyte::user::U
         });
     }
 }
-
-static void OnLoginQueued(const accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> ticket)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-
-    g_login_status = AB_LOGIN_QUEUED;
-    g_queue_ticket = ticket;
-    g_last_queue_poll = Sys_DoubleTime();
-
-    Con_Printf("AccelByte: In login queue...\n");
-}
-
-static void OnLoginError(const accelbyte::Error& error)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-
-    g_error_message = error.what().c_str();
-    g_login_status = AB_LOGIN_FAILED;
-    g_queue_ticket = nullptr;
-
-    Con_Printf("AccelByte: Login failed - %s\n", g_error_message.c_str());
-}
-
-//------------------------------------------------------------------------------
-// Public C API implementation
-//------------------------------------------------------------------------------
-extern "C" {
 
 void AB_Init(void)
 {
@@ -569,7 +579,6 @@ void AB_Shutdown(void)
     Con_Printf("AccelByte: SDK shutdown\n");
 }
 
-std::future<void> g_dummy_future;
 
 void AB_LoginWithDeviceId(void)
 {
@@ -694,103 +703,6 @@ void AB_Update(void)
 
     runner.execute_task_queue();
 }
-
-ab_login_status_t AB_GetLoginStatus(void)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    return g_login_status;
-}
-
-const char* AB_GetUserId(void)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_login_status == AB_LOGIN_SUCCESS && !g_user_id.empty())
-    {
-        return g_user_id.c_str();
-    }
-    return NULL;
-}
-
-const char* AB_GetDisplayName(void)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_login_status == AB_LOGIN_SUCCESS && !g_display_name.empty())
-    {
-        return g_display_name.c_str();
-    }
-    return NULL;
-}
-
-const char* AB_GetErrorMessage(void)
-{
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_login_status == AB_LOGIN_FAILED && !g_error_message.empty())
-    {
-        return g_error_message.c_str();
-    }
-    return NULL;
-}
-
-void AB_UpdateUserStatItemValue(const char* stat_code, float value, int strategy)
-{
-    if (!g_initialized)
-    {
-        Con_Printf("AccelByte: SDK not initialized\n");
-        return;
-    }
-
-    if (!stat_code || !stat_code[0])
-    {
-        Con_Printf("AccelByte: stat_code is empty\n");
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(g_mutex);
-
-    if (g_login_status != AB_LOGIN_SUCCESS || !g_current_user)
-    {
-        Con_Printf("AccelByte: Not logged in, cannot update stat\n");
-        return;
-    }
-
-    using UpdateStrategy = accelbyte::social::model::UpdateStatItem::UpdateStrategy;
-    UpdateStrategy update_strategy;
-    switch (strategy)
-    {
-    case 0:  update_strategy = UpdateStrategy::OVERRIDE;  break;
-    case 1:  update_strategy = UpdateStrategy::INCREMENT;  break;
-    case 2:  update_strategy = UpdateStrategy::MAX;        break;
-    case 3:  update_strategy = UpdateStrategy::MIN;        break;
-    default:
-        Con_Printf("AccelByte: Invalid strategy %d (use 0=OVERRIDE, 1=INCREMENT, 2=MAX, 3=MIN)\n", strategy);
-        return;
-    }
-
-    accelbyte::social::user_statistic::UpdateUserStatItemValueV2 request;
-    request.stat_code = stat_code;
-    request.user_id = g_user_id.c_str();
-    request.body.update_strategy = update_strategy;
-    request.body.value = value;
-
-    const accelbyte::tls::SecurityAuthorization& authorization = *g_current_user;
-
-    std::string stat_code_copy(stat_code);
-
-    accelbyte::social::UserStatistic::update_user_stat_item_value_v2(
-        authorization,
-        request,
-        [stat_code_copy](const accelbyte::social::model::StatItemInc& result) {
-            Con_Printf("AccelByte: Stat '%s' updated, current value: %f\n",
-                stat_code_copy.c_str(), result.current_value);
-        },
-        [stat_code_copy](const accelbyte::Error& error) {
-            Con_Printf("AccelByte: Failed to update stat '%s' - %s\n",
-                stat_code_copy.c_str(), error.what().c_str());
-        }
-    );
-}
-
-} // close extern "C" temporarily for static C++ functions
 
 //------------------------------------------------------------------------------
 // AB_PatchSessionWithHostIP — leader publishes their IP to the session
@@ -1167,16 +1079,6 @@ int AB_IsSessionLeader(void)
 {
     std::lock_guard<std::mutex> lock(g_mutex);
     return g_is_session_leader ? 1 : 0;
-}
-
-int AB_IsInitialized(void)
-{
-    return g_initialized ? 1 : 0;
-}
-
-void* get_current_user(void)
-{
-    return nullptr;
 }
 
 } // extern "C"

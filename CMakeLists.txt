@@ -222,6 +222,11 @@ endif()
 if(USE_ACCELBYTE_GAMESDK)
     set(AB_INTEGRATION_SOURCES
         ${QUAKE_DIR}/ABIntegration/ab_integration.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_instance.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_login.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_statistic.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_cycle.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_leaderboard.cpp
         ${QUAKE_DIR}/ABIntegration/ab_p2p.cpp
         ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
         ${QUAKE_DIR}/ABIntegration/ams.cpp
@@ -369,6 +374,7 @@ if(USE_ACCELBYTE_GAMESDK)
         accelbyte-gamesdk::p2p_connection
         accelbyte-gamesdk::settings
         abcnl-codegen::social
+        abcnl-codegen::leaderboard
         abcnl::curl_http_executor
     )
 

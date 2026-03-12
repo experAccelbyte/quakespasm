@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "bgmusic.h"
 #include "ABIntegration/ab_integration.h"
+extern ab_instance_t* g_ab_instance;
 
 const char *svc_strings[] =
 {
@@ -1165,7 +1166,16 @@ void CL_ParseServerMessage (void)
 			i = MSG_ReadByte ();
 			if (i >= cl.maxclients)
 				Host_Error ("CL_ParseServerMessage: svc_updatefrags > MAX_SCOREBOARD");
-			cl.scores[i].frags = MSG_ReadShort ();
+			{
+				int new_frags = MSG_ReadShort();
+				if (!cls.demoplayback
+					&& i == cl.viewentity - 1
+					&& new_frags > cl.scores[i].frags)
+				{
+					ab_update_user_stat(g_ab_instance, "qfrag", 1.0f, 1);
+				}
+				cl.scores[i].frags = new_frags;
+			}
 			break;
 
 		case svc_updatecolors:
@@ -1228,7 +1238,9 @@ void CL_ParseServerMessage (void)
 		case svc_killedmonster:
 			cl.stats[STAT_MONSTERS]++;
 			// Whenever a monster dies, save the current cl.stats[STAT_MONSTERS] value.
-			AB_UpdateUserStatItemValue("qmonsterkill", 1.0f, 1);
+			if (!cls.demoplayback) {
+				ab_update_user_stat(g_ab_instance, "qmonsterkill", 1.0f, 1);
+			}
 			break;
 
 		case svc_foundsecret:

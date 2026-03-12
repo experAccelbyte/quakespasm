@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifdef USE_ACCELBYTE_GAMESDK
 #include "ABIntegration/ab_integration.h"
 #include "ABIntegration/ams.h"
+ab_instance_t* g_ab_instance = NULL;
 #endif
 
 /*
@@ -784,7 +785,7 @@ void _Host_Frame (float time)
 	}
 
 #ifdef USE_ACCELBYTE_GAMESDK
-	AB_Update ();
+	ab_update(g_ab_instance);
 	AMS_Update ();
 #endif
 
@@ -880,7 +881,7 @@ void Host_Init (void)
 		Chase_Init ();
 		M_Init ();
 #ifdef USE_ACCELBYTE_GAMESDK
-		AB_Init ();
+		g_ab_instance = ab_create();
 #endif
 		ExtraMaps_Init (); //johnfitz
 		Modlist_Init (); //johnfitz
@@ -954,7 +955,8 @@ void Host_Shutdown(void)
 
 #ifdef USE_ACCELBYTE_GAMESDK
 	AMS_Shutdown ();
-	AB_Shutdown ();
+	ab_destroy(g_ab_instance);
+	g_ab_instance = NULL;
 #endif
 
 // keep Con_Printf from trying to update the screen

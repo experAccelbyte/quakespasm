@@ -1,0 +1,49 @@
+#pragma once
+
+#include "ab_login.h"
+#include "ab_statistic.h"
+#include "ab_cycle.h"
+#include "ab_leaderboard.h"
+#include "ab_task_runner.h"
+
+#include <string>
+
+class ABInstance {
+public:
+    ABInstance();
+    ~ABInstance() = default;
+
+    void SetServerUrl   (const char* url);
+    void SetClientId    (const char* id);
+    void SetClientSecret(const char* secret);
+
+    const char* GetServerUrl()    const;
+    const char* GetClientId()     const;
+    const char* GetClientSecret() const;
+
+    void Update();
+
+    AB_Login&             GetLogin();
+    const AB_Login&       GetLogin() const;
+
+    AB_Statistic&         GetStatistic();
+    const AB_Statistic&   GetStatistic() const;
+    AB_Cycle&             GetCycle();
+    const AB_Cycle&       GetCycle() const;
+    AB_Leaderboard&       GetLeaderboard();
+    const AB_Leaderboard& GetLeaderboard() const;
+
+    accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
+
+private:
+    ABTaskRunner   task_runner_;
+    AB_Login       login_;
+
+    AB_Statistic   statistic_;
+    AB_Cycle       cycle_;
+    AB_Leaderboard leaderboard_;
+
+    std::string server_url_;
+    std::string client_id_;
+    std::string client_secret_;
+};

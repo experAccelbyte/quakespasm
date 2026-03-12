@@ -25,7 +25,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifdef USE_ACCELBYTE_GAMESDK
 #include "ABIntegration/ab_integration.h"
+extern ab_instance_t* g_ab_instance;
 static qboolean ab_login_triggered = false;
+
+static void AB_OnLoginSuccess(const char* user_id, const char* display_name, void* userdata)
+{
+    (void)display_name;
+    (void)userdata;
+    cvar_t* name_cvar = Cvar_FindVar("_cl_name");
+    if (name_cvar)
+    {
+        unsigned int saved_flags = name_cvar->flags;
+        name_cvar->flags &= ~CVAR_ARCHIVE;
+        Cvar_SetQuick(name_cvar, user_id);
+        name_cvar->flags = saved_flags;
+    }
+    Con_Printf("AccelByte: Player name set to user ID %s\n", user_id);
+}
 #endif
 
 void (*vid_menucmdfn)(void); //johnfitz
@@ -53,6 +69,9 @@ void M_Menu_Main_f (void);
 		void M_Menu_Video_f (void);
 	void M_Menu_Help_f (void);
 	void M_Menu_Quit_f (void);
+#ifdef USE_ACCELBYTE_GAMESDK
+	void M_Menu_Leaderboard_f (void);
+#endif
 
 void M_Main_Draw (void);
 	void M_SinglePlayer_Draw (void);
@@ -73,6 +92,9 @@ void M_Main_Draw (void);
 		void M_Video_Draw (void);
 	void M_Help_Draw (void);
 	void M_Quit_Draw (void);
+#ifdef USE_ACCELBYTE_GAMESDK
+	void M_Leaderboard_Draw (void);
+#endif
 
 void M_Main_Key (int key);
 	void M_SinglePlayer_Key (int key);
@@ -93,6 +115,9 @@ void M_Main_Key (int key);
 		void M_Video_Key (int key);
 	void M_Help_Key (int key);
 	void M_Quit_Key (int key);
+#ifdef USE_ACCELBYTE_GAMESDK
+	void M_Leaderboard_Key (int key);
+#endif
 
 qboolean	m_entersound;		// play after drawing a frame, so caching
 								// won't disrupt the sound
@@ -252,7 +277,11 @@ void M_ToggleMenu_f (void)
 /* MAIN MENU */
 
 int	m_main_cursor;
+#ifdef USE_ACCELBYTE_GAMESDK
+#define	MAIN_ITEMS	6
+#else
 #define	MAIN_ITEMS	5
+#endif
 
 
 void M_Menu_Main_f (void)
@@ -262,7 +291,7 @@ void M_Menu_Main_f (void)
 	if (!ab_login_triggered)
 	{
 		ab_login_triggered = true;
-		AB_LoginWithDeviceId();
+		ab_login_with_device_id(g_ab_instance, AB_OnLoginSuccess, NULL);
 	}
 #endif
 
@@ -291,6 +320,10 @@ void M_Main_Draw (void)
 	f = (int)(realtime * 10)%6;
 
 	M_DrawTransPic (54, 32 + m_main_cursor * 20,Draw_CachePic( va("gfx/menudot%i.lmp", f+1 ) ) );
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	M_Print (72, 32 + 5*20, "Leaderboard");
+#endif
 }
 
 
@@ -348,6 +381,12 @@ void M_Main_Key (int key)
 		case 4:
 			M_Menu_Quit_f ();
 			break;
+
+#ifdef USE_ACCELBYTE_GAMESDK
+		case 5:
+			M_Menu_Leaderboard_f ();
+			break;
+#endif
 		}
 	}
 }
@@ -2684,6 +2723,206 @@ void M_ServerList_Key (int k)
 }
 
 //=============================================================================
+/* LEADERBOARD MENU */
+
+#ifdef USE_ACCELBYTE_GAMESDK
+
+typedef struct
+{
+	const char *leaderboard_code;
+	const char *display_name;
+	const char *cycle_id;	/* NULL = all-time (reserved for future use) */
+} lb_config_t;
+
+/* TODO: Replace placeholder values with your real leaderboard codes, names,
+ * and cycle IDs from the AccelByte console. Add or remove rows as needed. */
+static const lb_config_t lb_configs[] =
+{
+	{ "monsterkill", "Monster Kill", "monsterkillseason" },
+	{ "frags", "Frags", "monsterkillseason" },
+};
+
+#define LB_CONFIG_COUNT	((int)(sizeof(lb_configs) / sizeof(lb_configs[0])))
+#define LB_PAGE_SIZE	15
+#define LB_LOAD_TIMEOUT	5.0		/* seconds before "No data" is shown */
+
+static int				lb_current;		/* index into lb_configs */
+static int				lb_page;		/* 0-based page number */
+static int				lb_entry_count;	/* entries on the current page */
+static double			lb_fetch_time;	/* realtime at last fetch start */
+static ab_rank_entry_t	lb_entries[LB_PAGE_SIZE];
+
+static void M_Leaderboard_Fetch (void)
+{
+	const lb_config_t *cfg = &lb_configs[lb_current];
+	int offset = lb_page * LB_PAGE_SIZE;
+
+	ab_leaderboard_invalidate_cache (g_ab_instance);
+	lb_fetch_time = realtime;
+
+	if (cfg->cycle_id)
+		ab_leaderboard_fetch_cycle_rankings (g_ab_instance,
+			cfg->leaderboard_code, cfg->cycle_id,
+			LB_PAGE_SIZE, offset);
+	else
+		ab_leaderboard_fetch_rankings (g_ab_instance,
+			cfg->leaderboard_code,
+			LB_PAGE_SIZE, offset);
+}
+
+void M_Menu_Leaderboard_f (void)
+{
+	IN_Deactivate (modestate == MS_WINDOWED);
+	key_dest     = key_menu;
+	m_state      = m_leaderboard;
+	m_entersound = true;
+	lb_page      = 0;
+	lb_entry_count = 0;
+	M_Leaderboard_Fetch ();
+}
+
+void M_Leaderboard_Draw (void)
+{
+	const lb_config_t	*cfg = &lb_configs[lb_current];
+	int					 i, y, namelen;
+	char				 line[41];
+
+	/* Background — fills the full 320x200 CANVAS_MENU:
+	 *   width  = 8 + (38/2)*16 + 8 = 320 px
+	 *   height = (23+2)*8         = 200 px
+	 * Interior begins at x=8, y=8. All content below is shifted +8 on Y
+	 * to sit cleanly inside the box. */
+	M_DrawTextBox (0, 0, 38, 23);
+
+	/* Title */
+	M_PrintWhite (104, 12, "LEADERBOARD");
+
+	/* Leaderboard selector */
+	namelen = (int)strlen (cfg->display_name);
+	if (LB_CONFIG_COUNT > 1)
+	{
+		if (lb_current > 0)
+			M_Print (8, 24, "<");
+		M_PrintWhite ((320 - namelen * 8) / 2, 24, cfg->display_name);
+		if (lb_current < LB_CONFIG_COUNT - 1)
+			M_Print (312, 24, ">");
+	}
+	else
+	{
+		M_PrintWhite ((320 - namelen * 8) / 2, 24, cfg->display_name);
+	}
+
+	/* Page indicator */
+	M_PrintWhite (8, 36, va ("Page %d", lb_page + 1));
+
+	/* Column header */
+	M_Print (8,   44, "RANK");
+	M_Print (48,  44, "USER ID");
+	M_Print (240, 44, "SCORE");
+
+	/* Pull latest data from cache on every draw frame */
+	if (cfg->cycle_id)
+		lb_entry_count = ab_leaderboard_get_cycle_rankings (g_ab_instance,
+			cfg->leaderboard_code, cfg->cycle_id,
+			lb_entries, LB_PAGE_SIZE);
+	else
+		lb_entry_count = ab_leaderboard_get_rankings (g_ab_instance,
+			cfg->leaderboard_code, lb_entries, LB_PAGE_SIZE);
+
+	if (lb_entry_count == 0)
+	{
+		if (realtime - lb_fetch_time < LB_LOAD_TIMEOUT)
+			M_PrintWhite (104, 104, "Loading...");
+		else
+			M_PrintWhite (32, 104, "No data  (ENTER to retry)");
+	}
+	else
+	{
+		y = 52;
+		for (i = 0; i < lb_entry_count; i++, y += 8)
+		{
+			q_snprintf (line, sizeof (line), "#%-3d %-22.22s %7.0f",
+				lb_entries[i].rank,
+				lb_entries[i].user_id,
+				(double)lb_entries[i].point);
+			M_PrintWhite (8, y, line);
+		}
+	}
+
+	/* Navigation hints */
+	if (LB_CONFIG_COUNT > 1)
+		M_PrintWhite (8, 176, "LEFT/RIGHT: switch leaderboard");
+	M_PrintWhite (8, 184, "PGUP/PGDN: scroll   ESC: back");
+}
+
+void M_Leaderboard_Key (int key)
+{
+	switch (key)
+	{
+	case K_ESCAPE:
+	case K_BBUTTON:
+		M_Menu_Main_f ();
+		break;
+
+	case K_ENTER:
+	case K_KP_ENTER:
+	case K_ABUTTON:
+		if (lb_entry_count == 0)
+		{
+			/* Retry a failed or timed-out fetch */
+			M_Leaderboard_Fetch ();
+		}
+		break;
+
+	case K_PGUP:
+	case K_UPARROW:
+		if (lb_page > 0)
+		{
+			S_LocalSound ("misc/menu1.wav");
+			lb_page--;
+			M_Leaderboard_Fetch ();
+		}
+		break;
+
+	case K_PGDN:
+	case K_DOWNARROW:
+		/* Only advance if the current page is full — otherwise we are at the end */
+		if (lb_entry_count >= LB_PAGE_SIZE)
+		{
+			S_LocalSound ("misc/menu1.wav");
+			lb_page++;
+			M_Leaderboard_Fetch ();
+		}
+		break;
+
+	case K_LEFTARROW:
+		if (lb_current > 0)
+		{
+			S_LocalSound ("misc/menu1.wav");
+			lb_current--;
+			lb_page = 0;
+			M_Leaderboard_Fetch ();
+		}
+		break;
+
+	case K_RIGHTARROW:
+		if (lb_current < LB_CONFIG_COUNT - 1)
+		{
+			S_LocalSound ("misc/menu1.wav");
+			lb_current++;
+			lb_page = 0;
+			M_Leaderboard_Fetch ();
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+#endif /* USE_ACCELBYTE_GAMESDK */
+
+//=============================================================================
 /* Credits menu -- used by the 2021 re-release */
 
 void M_Menu_Credits_f (void)
@@ -2709,6 +2948,9 @@ void M_Init (void)
 	Cmd_AddCommand ("help", M_Menu_Help_f);
 	Cmd_AddCommand ("menu_quit", M_Menu_Quit_f);
 	Cmd_AddCommand ("menu_credits", M_Menu_Credits_f); // needed by the 2021 re-release
+#ifdef USE_ACCELBYTE_GAMESDK
+	Cmd_AddCommand ("menu_leaderboard", M_Menu_Leaderboard_f);
+#endif
 }
 
 
@@ -2814,6 +3056,12 @@ void M_Draw (void)
 		M_Matchmake_Draw ();
 		break;
 #endif
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	case m_leaderboard:
+		M_Leaderboard_Draw ();
+		break;
+#endif
 	}
 
 	if (m_entersound)
@@ -2900,6 +3148,12 @@ void M_Keydown (int key)
 #ifdef USE_ACCELBYTE_GAMESDK
 	case m_matchmake:
 		M_Matchmake_Key (key);
+		return;
+#endif
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	case m_leaderboard:
+		M_Leaderboard_Key (key);
 		return;
 #endif
 	}
