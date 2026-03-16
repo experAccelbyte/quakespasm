@@ -13,6 +13,9 @@ ABInstance::ABInstance()
     statistic_.SetTaskRunner(task_runner_);
     cycle_.SetTaskRunner(task_runner_);
     leaderboard_.SetTaskRunner(task_runner_);
+    p2p_.SetTaskRunner(task_runner_);
+    matchmaking_.SetTaskRunner(task_runner_);
+    matchmaking_.SetP2P(p2p_);
 }
 
 void ABInstance::SetServerUrl   (const char* url)    { server_url_    = url    ? url    : ""; }
@@ -25,6 +28,7 @@ const char* ABInstance::GetClientSecret() const { return client_secret_.c_str();
 
 void ABInstance::Update()
 {
+    ams_.Update();
     task_runner_.execute_task_queue();
 }
 
@@ -37,6 +41,12 @@ AB_Cycle&           ABInstance::GetCycle()               { return cycle_; }
 const AB_Cycle&     ABInstance::GetCycle() const         { return cycle_; }
 AB_Leaderboard&       ABInstance::GetLeaderboard()       { return leaderboard_; }
 const AB_Leaderboard& ABInstance::GetLeaderboard() const { return leaderboard_; }
+AB_P2P&               ABInstance::GetP2P()               { return p2p_; }
+const AB_P2P&         ABInstance::GetP2P()         const { return p2p_; }
+AB_AMS&               ABInstance::GetAMS()               { return ams_; }
+const AB_AMS&         ABInstance::GetAMS()         const { return ams_; }
+AB_Matchmaking&       ABInstance::GetMatchmaking()       { return matchmaking_; }
+const AB_Matchmaking& ABInstance::GetMatchmaking() const { return matchmaking_; }
 
 accelbyte::memory::SharedPtr<accelbyte::user::User> ABInstance::GetCurrentUser() const
 {

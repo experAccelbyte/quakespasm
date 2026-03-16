@@ -4,6 +4,9 @@
 #include "ab_statistic.h"
 #include "ab_cycle.h"
 #include "ab_leaderboard.h"
+#include "ab_p2p.h"
+#include "ab_ams.h"
+#include "ab_matchmaking.h"
 #include "ab_task_runner.h"
 
 #include <string>
@@ -32,6 +35,12 @@ public:
     const AB_Cycle&       GetCycle() const;
     AB_Leaderboard&       GetLeaderboard();
     const AB_Leaderboard& GetLeaderboard() const;
+    AB_P2P&               GetP2P();
+    const AB_P2P&         GetP2P() const;
+    AB_AMS&               GetAMS();
+    const AB_AMS&         GetAMS() const;
+    AB_Matchmaking&       GetMatchmaking();
+    const AB_Matchmaking& GetMatchmaking() const;
 
     accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
 
@@ -42,6 +51,9 @@ private:
     AB_Statistic   statistic_;
     AB_Cycle       cycle_;
     AB_Leaderboard leaderboard_;
+    AB_P2P         p2p_;
+    AB_AMS         ams_;
+    AB_Matchmaking matchmaking_;
 
     std::string server_url_;
     std::string client_id_;

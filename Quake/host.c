@@ -28,7 +28,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifdef USE_ACCELBYTE_GAMESDK
 #include "ABIntegration/ab_integration.h"
-#include "ABIntegration/ams.h"
 ab_instance_t* g_ab_instance = NULL;
 #endif
 
@@ -786,7 +785,6 @@ void _Host_Frame (float time)
 
 #ifdef USE_ACCELBYTE_GAMESDK
 	ab_update(g_ab_instance);
-	AMS_Update ();
 #endif
 
 	host_framecount++;
@@ -871,6 +869,10 @@ void Host_Init (void)
 	Con_Printf ("Exe: " __TIME__ " " __DATE__ "\n");
 	Con_Printf ("%4.1f megabyte heap\n", host_parms->memsize/ (1024*1024.0));
 
+#ifdef USE_ACCELBYTE_GAMESDK
+	g_ab_instance = ab_create();
+#endif
+
 	if (cls.state != ca_dedicated)
 	{
 		host_colormap = (byte *)COM_LoadHunkFile ("gfx/colormap.lmp", NULL);
@@ -880,9 +882,6 @@ void Host_Init (void)
 		V_Init ();
 		Chase_Init ();
 		M_Init ();
-#ifdef USE_ACCELBYTE_GAMESDK
-		g_ab_instance = ab_create();
-#endif
 		ExtraMaps_Init (); //johnfitz
 		Modlist_Init (); //johnfitz
 		DemoList_Init (); //ericw
@@ -927,9 +926,6 @@ void Host_Init (void)
 		Cbuf_Execute ();
 		if (!sv.active)
 			Cbuf_AddText ("map start\n");
-#ifdef USE_ACCELBYTE_GAMESDK
-		AMS_Init ();
-#endif
 	}
 }
 
@@ -954,7 +950,6 @@ void Host_Shutdown(void)
 	isdown = true;
 
 #ifdef USE_ACCELBYTE_GAMESDK
-	AMS_Shutdown ();
 	ab_destroy(g_ab_instance);
 	g_ab_instance = NULL;
 #endif

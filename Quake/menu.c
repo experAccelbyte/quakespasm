@@ -776,7 +776,7 @@ void M_Menu_Matchmake_f (void)
 	key_dest = key_menu;
 	m_state = m_matchmake;
 	m_entersound = true;
-	AB_CreateMatchTicket ();
+	AB_CreateMatchTicket (g_ab_instance);
 }
 
 void M_Matchmake_Draw (void)
@@ -786,7 +786,7 @@ void M_Matchmake_Draw (void)
 	int		ndots;
 	ab_matchmake_status_t status;
 
-	status = AB_GetMatchmakingStatus ();
+	status = AB_GetMatchmakingStatus (g_ab_instance);
 
 	M_DrawTransPic (16, 4, Draw_CachePic ("gfx/qplaque.lmp") );
 
@@ -804,7 +804,7 @@ void M_Matchmake_Draw (void)
 	case AB_MM_FOUND:
 		M_PrintWhite (104, y, "Match found!");
 		M_PrintWhite (80, y + 16, va("Players: %d  Teams: %d",
-			AB_GetMatchNumPlayers(), AB_GetMatchNumTeams()));
+			AB_GetMatchNumPlayers(g_ab_instance), AB_GetMatchNumTeams(g_ab_instance)));
 		break;
 
 	case AB_MM_JOINING:
@@ -855,7 +855,7 @@ void M_Matchmake_Key (int key)
 	{
 	case K_ESCAPE:
 	case K_BBUTTON:
-		AB_CancelMatchTicket ();
+		AB_CancelMatchTicket (g_ab_instance);
 		M_Menu_MultiPlayer_f ();
 		break;
 	}

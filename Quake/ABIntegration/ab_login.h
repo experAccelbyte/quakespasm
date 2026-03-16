@@ -6,6 +6,7 @@
 #include "ab_integration.h"
 #include "ab_task_runner.h"
 
+#include <functional>
 #include <string>
 #include <mutex>
 #include <future>
@@ -16,6 +17,14 @@ public:
     ~AB_Login() = default;
 
     void SetTaskRunner(ABTaskRunner& tr);
+
+    // Override the generated device ID (must be called before LoginWithDeviceId).
+    void SetDeviceId(const char* id);
+
+    // Register a C++ hook invoked on the login thread immediately after a
+    // successful login.  Use this to perform async setup (e.g. lobby connect)
+    // that needs the full User object before the C callback fires.
+    void SetPostLoginHook(std::function<void(accelbyte::memory::SharedPtr<accelbyte::user::User>)> hook);
 
     void LoginWithDeviceId(ab_login_success_callback_t on_success, void* userdata);
 
@@ -43,6 +52,8 @@ private:
     accelbyte::memory::SharedPtr<accelbyte::user::User>                    current_user_;
     accelbyte::memory::SharedPtr<accelbyte::iam::model::LoginQueueTicket> queue_ticket_;
     std::future<void>  login_future_;
+
+    std::function<void(accelbyte::memory::SharedPtr<accelbyte::user::User>)> post_login_hook_;
 
     ABTaskRunner* task_runner_ = nullptr;
 };

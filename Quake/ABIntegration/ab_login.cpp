@@ -63,12 +63,26 @@ static std::string GenerateDeviceId()
 AB_Login::AB_Login()
 {
     device_id_ = GenerateDeviceId();
-    Con_Printf("AccelByte: Device ID: %s\n", device_id_.c_str());
 }
 
 void AB_Login::SetTaskRunner(ABTaskRunner& tr)
 {
     task_runner_ = &tr;
+}
+
+void AB_Login::SetDeviceId(const char* id)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (id && id[0]) {
+        device_id_ = id;
+        Con_Printf("AccelByte: Device ID: %s\n", device_id_.c_str());
+    }
+}
+
+void AB_Login::SetPostLoginHook(std::function<void(accelbyte::memory::SharedPtr<accelbyte::user::User>)> hook)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    post_login_hook_ = std::move(hook);
 }
 
 void AB_Login::LoginWithDeviceId(ab_login_success_callback_t on_success, void* userdata)
@@ -127,20 +141,33 @@ accelbyte::memory::SharedPtr<accelbyte::user::User> AB_Login::GetCurrentUser() c
     return current_user_;
 }
 
-void AB_Login::OnLoginSuccess(accelbyte::memory::SharedPtr<accelbyte::user::User> user,
-                               ab_login_success_callback_t on_success, void* userdata)
+void AB_Login::OnLoginSuccess(
+    accelbyte::memory::SharedPtr<accelbyte::user::User> user, ab_login_success_callback_t on_success, void* userdata)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    current_user_ = user;
-    user_id_      = user->user_id().c_str();
-    display_name_ = user->display_name().c_str();
-    status_       = AB_LOGIN_SUCCESS;
-    queue_ticket_ = nullptr;
+    std::function<void(accelbyte::memory::SharedPtr<accelbyte::user::User>)> hook;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        current_user_ = user;
+        user_id_ = user->user_id().c_str();
+        display_name_ = user->display_name().c_str();
+        status_ = AB_LOGIN_SUCCESS;
+        queue_ticket_ = nullptr;
+        hook = post_login_hook_;
+    }
+
+    // Invoke the post-login hook on the login thread (before queuing the C callback).
+    // This allows async setup (e.g. lobby connection) to happen while still on the
+    // background login thread so the C callback fires after setup is complete.
+    if (hook)
+        hook(user);
 
     if (task_runner_)
         task_runner_->queue_task(
-            [](const accelbyte::String& token, const std::string& user_id,
-               const std::string& display_name, ab_login_success_callback_t cb, void* ud) {
+            [](const accelbyte::String& token,
+               const std::string& user_id,
+               const std::string& display_name,
+               ab_login_success_callback_t cb,
+               void* ud) {
                 Con_Printf("AccelByte: Login successful! Token: %s\n", token.c_str());
                 if (cb)
                     cb(user_id.c_str(), display_name.c_str(), ud);

@@ -8,66 +8,94 @@
  * that bridge to the P2P data channel.
  */
 
-#ifndef AB_P2P_H
-#define AB_P2P_H
+#pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <accelbyte/user/User.h>
+#include <accelbyte/lobby/LobbyConnection.h>
+#include <accelbyte/p2p_connection/P2PServer.h>
+#include <accelbyte/p2p_connection/Connection.h>
+#include "ab_task_runner.h"
 
-/*
- * Initialize P2P subsystem. Called once during AB_Init().
- */
-void ABP2P_Init(void);
+#include <cstdint>
+#include <memory>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <vector>
+#include <string>
 
-/*
- * Shutdown P2P subsystem and clean up all connections/threads.
- */
-void ABP2P_Shutdown(void);
+class AB_P2P {
+public:
+    // Per-client proxy state on the host side.
+    // Uses uintptr_t for the UDP socket handle to avoid pulling
+    // platform socket headers (<winsock2.h> / <sys/socket.h>) into this header.
+    // Sentinel for "no socket": ~uintptr_t(0)  (== INVALID_SOCKET on all platforms).
+    struct HostClientProxy {
+        std::shared_ptr<accelbyte::p2p_connection::Connection> connection;
+        std::thread       proxy_thread;
+        std::atomic<bool> running{false};
+        uintptr_t         udp_socket{~uintptr_t(0)};
+        std::string       peer_id;
+    };
 
-/*
- * Poll P2P state — accept new connections on host, check connection status, etc.
- * Called each frame from AB_Update().
- */
-void ABP2P_Update(void);
+    AB_P2P();
+    ~AB_P2P();
 
-/*
- * Host: create P2P server and start accepting connections.
- * Called after the listen server is up.
- */
-void ABP2P_StartServer(void);
+    AB_P2P(const AB_P2P&) = delete;
+    AB_P2P& operator=(const AB_P2P&) = delete;
 
-/*
- * Host: stop P2P server and disconnect all P2P clients.
- */
-void ABP2P_StopServer(void);
+    void SetTaskRunner(ABTaskRunner& tr);
 
-/*
- * Client: initiate P2P connection to the session leader.
- * peer_id is the AccelByte user ID of the host.
- * On success, returns the local proxy port to connect to via "connect 127.0.0.1:<port>".
- * Returns 0 on failure.
- */
-void ABP2P_ConnectToHost(const char* peer_id);
+    // Call after a successful login with the user and lobby connection.
+    // StartServer / ConnectToHost will use these without needing them as parameters.
+    void SetLobbyContext(
+        accelbyte::memory::SharedPtr<accelbyte::user::User>             user,
+        accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> lobby_conn);
 
-/*
- * Client: disconnect from P2P host.
- */
-void ABP2P_Disconnect(void);
+    // Lifecycle — called from ABInstance (wired in ab_create / ab_destroy / ab_update).
+    void Init();
+    void Shutdown();
+    void Update();
 
-/*
- * Returns the local proxy port for the client to connect to.
- * Returns 0 if not connected yet.
- */
-int ABP2P_GetClientProxyPort(void);
+    // Host path: start / stop listening for incoming P2P connections.
+    void StartServer();
+    void StopServer();
 
-/*
- * Returns 1 if the client P2P connection is established, 0 otherwise.
- */
-int ABP2P_IsClientConnected(void);
+    // Client path: connect to the session leader by AccelByte user ID.
+    void ConnectToHost(const char* peer_id);
+    void Disconnect();
 
-#ifdef __cplusplus
-}
-#endif
+    int GetClientProxyPort() const;
+    int IsClientConnected()  const;
 
-#endif /* AB_P2P_H */
+private:
+    void ResolveLocalAddr();
+    void ServerAcceptThreadBody();
+    void HostProxyThreadBody(HostClientProxy* proxy);
+    void ClientProxyThreadBody();
+
+    // Lobby context (set once after login, read by Start/Connect)
+    mutable std::mutex                                              ctx_mutex_;
+    accelbyte::memory::SharedPtr<accelbyte::user::User>             current_user_;
+    accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> lobby_conn_;
+
+    // Guards host_proxies_ and p2p_server_
+    std::mutex    p2p_mutex_;
+    unsigned long local_addr_{0}; // network-byte-order local IP for proxy sockets
+
+    // Host state
+    std::shared_ptr<accelbyte::p2p_connection::P2PServer> p2p_server_;
+    std::atomic<bool>  server_running_{false};
+    std::thread        server_accept_thread_;
+    std::vector<std::unique_ptr<HostClientProxy>> host_proxies_;
+
+    // Client state
+    std::shared_ptr<accelbyte::p2p_connection::Connection> client_connection_;
+    std::thread        client_connect_thread_;
+    std::atomic<bool>  client_running_{false};
+    std::atomic<bool>  client_connected_{false};
+    uintptr_t          client_proxy_socket_{~uintptr_t(0)};
+    std::atomic<int>   client_proxy_port_{0};
+
+    ABTaskRunner* task_runner_ = nullptr;
+};

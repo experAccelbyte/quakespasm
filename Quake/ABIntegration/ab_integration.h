@@ -25,21 +25,6 @@ typedef enum {
     AB_MM_ERROR
 } ab_matchmake_status_t;
 
-/* Matchmaking status enum */
-typedef enum {
-    AB_MM_IDLE,
-    AB_MM_SEARCHING,
-    AB_MM_FOUND,
-    AB_MM_JOINING,
-    AB_MM_WAITING_FOR_DS,
-    AB_MM_JOINED_AS_LEADER,
-    AB_MM_JOINED_AS_CLIENT,
-    AB_MM_HOSTING,
-    AB_MM_CONNECTING,
-    AB_MM_CANCELLED,
-    AB_MM_ERROR
-} ab_matchmake_status_t;
-
 /* Login status enum */
 typedef enum {
     AB_LOGIN_IDLE,
@@ -128,7 +113,7 @@ int  ab_leaderboard_get_user_cycle_rank (const ab_instance_t* instance,
  * Get error message if login failed
  * Returns NULL if no error
  */
-const char* AB_GetErrorMessage(void);
+const char* AB_GetErrorMessage(const ab_instance_t* instance);
 
 /*
  * Update a user stat item value.
@@ -137,67 +122,62 @@ const char* AB_GetErrorMessage(void);
  * value: the value to apply
  * strategy: 0 = OVERRIDE, 1 = INCREMENT, 2 = MAX, 3 = MIN
  */
-void AB_UpdateUserStatItemValue(const char* stat_code, float value, int strategy);
+void AB_UpdateUserStatItemValue(ab_instance_t* instance, const char* stat_code, float value, int strategy);
 
 /*
  * Create a match ticket — starts searching for a match
  */
-void AB_CreateMatchTicket(void);
+void AB_CreateMatchTicket(ab_instance_t* instance);
 
 /*
  * Cancel the current match ticket
  */
-void AB_CancelMatchTicket(void);
+void AB_CancelMatchTicket(ab_instance_t* instance);
 
 /*
  * Get current matchmaking status
  */
-ab_matchmake_status_t AB_GetMatchmakingStatus(void);
+ab_matchmake_status_t AB_GetMatchmakingStatus(const ab_instance_t* instance);
 
 /*
  * Set matchmaking status (for menu use)
  */
-void AB_SetMatchmakingStatus(ab_matchmake_status_t status);
+void AB_SetMatchmakingStatus(ab_instance_t* instance, ab_matchmake_status_t status);
 
 /*
  * Get matchmaking error message (NULL if no error)
  */
-const char* AB_GetMatchmakingErrorMessage(void);
+const char* AB_GetMatchmakingErrorMessage(const ab_instance_t* instance);
 
 /*
  * Get match ticket ID (NULL if none)
  */
-const char* AB_GetMatchTicketId(void);
+const char* AB_GetMatchTicketId(const ab_instance_t* instance);
 
 /*
  * Get match ID after match found (NULL if none)
  */
-const char* AB_GetMatchId(void);
+const char* AB_GetMatchId(const ab_instance_t* instance);
 
 /*
  * Get match pool name (NULL if none)
  */
-const char* AB_GetMatchPoolName(void);
+const char* AB_GetMatchPoolName(const ab_instance_t* instance);
 
 /*
  * Get number of players in the match
  */
-int AB_GetMatchNumPlayers(void);
+int AB_GetMatchNumPlayers(const ab_instance_t* instance);
 
 /*
  * Get number of teams in the match
  */
-int AB_GetMatchNumTeams(void);
+int AB_GetMatchNumTeams(const ab_instance_t* instance);
 
 /*
  * Check if we are the session leader
  */
-int AB_IsSessionLeader(void);
-
-/*
- * Check if SDK is initialized
- */
-int AB_IsInitialized(void);
+int AB_IsSessionLeader(const ab_instance_t* instance);
 
 void ab_leaderboard_invalidate_cache    (ab_instance_t* instance);
 
