@@ -228,6 +228,7 @@ if(USE_ACCELBYTE_GAMESDK)
         ${QUAKE_DIR}/ABIntegration/ab_cycle.cpp
         ${QUAKE_DIR}/ABIntegration/ab_leaderboard.cpp
         ${QUAKE_DIR}/ABIntegration/ab_p2p.cpp
+        ${QUAKE_DIR}/ABIntegration/ab_achievement.cpp
         ${QUAKE_DIR}/ABIntegration/ab_task_runner.cpp
         ${QUAKE_DIR}/ABIntegration/ab_ams.cpp
         ${QUAKE_DIR}/ABIntegration/ab_matchmaking.cpp

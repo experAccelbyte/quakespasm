@@ -71,6 +71,7 @@ void M_Menu_Main_f (void);
 	void M_Menu_Quit_f (void);
 #ifdef USE_ACCELBYTE_GAMESDK
 	void M_Menu_Leaderboard_f (void);
+    void M_Menu_Achievements_f(void);
 #endif
 
 void M_Main_Draw (void);
@@ -94,6 +95,7 @@ void M_Main_Draw (void);
 	void M_Quit_Draw (void);
 #ifdef USE_ACCELBYTE_GAMESDK
 	void M_Leaderboard_Draw (void);
+    void M_Achievements_Draw(void);
 #endif
 
 void M_Main_Key (int key);
@@ -117,6 +119,7 @@ void M_Main_Key (int key);
 	void M_Quit_Key (int key);
 #ifdef USE_ACCELBYTE_GAMESDK
 	void M_Leaderboard_Key (int key);
+    void M_Achievements_Key(int key);
 #endif
 
 qboolean	m_entersound;		// play after drawing a frame, so caching
@@ -278,7 +281,7 @@ void M_ToggleMenu_f (void)
 
 int	m_main_cursor;
 #ifdef USE_ACCELBYTE_GAMESDK
-#define	MAIN_ITEMS	6
+#define	MAIN_ITEMS	7
 #else
 #define	MAIN_ITEMS	5
 #endif
@@ -323,6 +326,7 @@ void M_Main_Draw (void)
 
 #ifdef USE_ACCELBYTE_GAMESDK
 	M_Print (72, 32 + 5*20, "Leaderboard");
+    M_Print(72, 32 + 6*20, "Achievements");
 #endif
 }
 
@@ -386,6 +390,10 @@ void M_Main_Key (int key)
 		case 5:
 			M_Menu_Leaderboard_f ();
 			break;
+
+		case 6:
+			M_Menu_Achievements_f();
+            break;
 #endif
 		}
 	}
@@ -3061,6 +3069,10 @@ void M_Draw (void)
 	case m_leaderboard:
 		M_Leaderboard_Draw ();
 		break;
+
+	case m_achievements:
+        M_Achievements_Draw();
+        break;
 #endif
 	}
 
@@ -3155,6 +3167,10 @@ void M_Keydown (int key)
 	case m_leaderboard:
 		M_Leaderboard_Key (key);
 		return;
+
+	case m_achievements:
+        M_Achievements_Key(key);
+        return;
 #endif
 	}
 }
@@ -3204,3 +3220,115 @@ void M_ConfigureNetSubsystem(void)
 		net_hostport = lanConfig_port;
 }
 
+//=============================================================================
+/* ACHIEVEMENTS MENU */
+
+#ifdef USE_ACCELBYTE_GAMESDK
+
+#    define ACHIEVEMENTS_ITEMS_PER_PAGE 8
+#    define ACHIEVEMENT_NAME_MAX 32 /* chars visible per row */
+
+static ab_achievement_t s_achievements[128];
+static int s_achievement_count = 0;
+static int s_achievement_scroll = 0;
+static qboolean s_achievements_loading = false;
+
+static void M_Achievements_OnFetched(const ab_achievement_t* achievements, int count)
+{
+    int i;
+    s_achievement_count = 0;
+    s_achievements_loading = false;
+
+    if (!achievements || count <= 0)
+        return;
+
+    if (count > 128)
+        count = 128;
+
+    for (i = 0; i < count; i++)
+        s_achievements[i] = achievements[i];
+
+    s_achievement_count = count;
+}
+
+void M_Menu_Achievements_f(void)
+{
+    IN_Deactivate(modestate == MS_WINDOWED);
+    key_dest = key_menu;
+    m_state = m_achievements;
+    m_entersound = true;
+    s_achievement_scroll = 0;
+
+    if (!s_achievements_loading) {
+        s_achievements_loading = true;
+        ab_achievement_query(g_ab_instance, M_Achievements_OnFetched);
+    }
+}
+
+void M_Achievements_Draw(void)
+{
+    int i, y, visible, total;
+    char line[48];
+    const ab_achievement_t* a;
+
+    M_DrawTextBox(0, 0, 38, 12);
+    M_PrintWhite(72, 8, "Achievements");
+
+    if (s_achievements_loading && s_achievement_count == 0) {
+        M_Print(72, 40, "Loading...");
+        return;
+    }
+
+    if (s_achievement_count == 0) {
+        M_Print(72, 40, "No achievements found.");
+        return;
+    }
+
+    total = s_achievement_count;
+    visible = (total - s_achievement_scroll < ACHIEVEMENTS_ITEMS_PER_PAGE) ? total - s_achievement_scroll :
+                                                                             ACHIEVEMENTS_ITEMS_PER_PAGE;
+
+    for (i = 0; i < visible; i++) {
+        a = &s_achievements[s_achievement_scroll + i];
+        y = 32 + i * 16;
+
+        /* Unlocked marker */
+        M_PrintWhite(16, y, a->unlocked ? "[x]" : "[ ]");
+
+        /* Achievement name — truncate to fit */
+        q_strlcpy(line, a->name[0] ? a->name : a->achievement_code, sizeof(line));
+        M_Print(48, y, line);
+    }
+
+    /* Scroll hints */
+    if (s_achievement_scroll > 0)
+        M_PrintWhite(152, 24, "\x1e"); /* up arrow */
+    if (s_achievement_scroll + ACHIEVEMENTS_ITEMS_PER_PAGE < total)
+        M_PrintWhite(152, 32 + visible * 16, "\x1f"); /* down arrow */
+
+    M_PrintWhite(16, 180, "ESC: back  UP/DOWN: scroll");
+}
+
+void M_Achievements_Key(int key)
+{
+    switch (key) {
+    case K_ESCAPE:
+    case K_BBUTTON:
+        M_Menu_Main_f();
+        break;
+
+    case K_UPARROW:
+        S_LocalSound("misc/menu1.wav");
+        if (s_achievement_scroll > 0)
+            s_achievement_scroll--;
+        break;
+
+    case K_DOWNARROW:
+        S_LocalSound("misc/menu1.wav");
+        if (s_achievement_scroll + ACHIEVEMENTS_ITEMS_PER_PAGE < s_achievement_count)
+            s_achievement_scroll++;
+        break;
+    }
+}
+
+#endif /* USE_ACCELBYTE_GAMESDK */

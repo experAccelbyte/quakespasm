@@ -42,7 +42,8 @@ enum m_state_e {
 	m_search,
 	m_slist,
 	m_matchmake,
-	m_leaderboard
+	m_leaderboard,
+    m_achievements
 };
 
 extern enum m_state_e m_state;

@@ -16,6 +16,7 @@ ABInstance::ABInstance()
     p2p_.SetTaskRunner(task_runner_);
     matchmaking_.SetTaskRunner(task_runner_);
     matchmaking_.SetP2P(p2p_);
+    achievement_.SetTaskRunner(task_runner_);
 }
 
 void ABInstance::SetServerUrl   (const char* url)    { server_url_    = url    ? url    : ""; }
@@ -47,6 +48,8 @@ AB_AMS&               ABInstance::GetAMS()               { return ams_; }
 const AB_AMS&         ABInstance::GetAMS()         const { return ams_; }
 AB_Matchmaking&       ABInstance::GetMatchmaking()       { return matchmaking_; }
 const AB_Matchmaking& ABInstance::GetMatchmaking() const { return matchmaking_; }
+AB_Achievement&       ABInstance::GetAchievement()       { return achievement_; }
+const AB_Achievement& ABInstance::GetAchievement() const { return achievement_; }
 
 accelbyte::memory::SharedPtr<accelbyte::user::User> ABInstance::GetCurrentUser() const
 {

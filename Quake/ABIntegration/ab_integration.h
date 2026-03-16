@@ -181,6 +181,53 @@ int AB_IsSessionLeader(const ab_instance_t* instance);
 
 void ab_leaderboard_invalidate_cache    (ab_instance_t* instance);
 
+/* -----------------------------------------------------------------------
+ * Achievement API
+ * ----------------------------------------------------------------------- */
+
+/*
+ * C-compatible struct describing a single achievement entry.
+ * unlocked: 1 if the current user has unlocked it, 0 otherwise.
+ */
+typedef struct {
+    char achievement_code[64];
+    char name[256];
+    char description[512];
+    int unlocked;
+} ab_achievement_t;
+
+/*
+ * Callback invoked on the main thread (via AB_Update) when
+ * ab_achievement_query finishes.
+ * achievements : pointer to an array of ab_achievement_t (may be NULL on error)
+ * count        : number of elements in the array (0 on error)
+ */
+typedef void (*ab_achievements_callback_t)(const ab_achievement_t* achievements, int count);
+
+/*
+ * Callback invoked on the main thread when ab_achievement_unlock finishes.
+ * success       : 1 on success, 0 on failure
+ * error_message : human-readable error string (NULL on success)
+ */
+typedef void (*ab_unlock_achievement_callback_t)(int success, const char* error_message);
+
+/*
+ * Query all namespace achievements and the current user's unlock status.
+ * Results are delivered asynchronously via on_done on the next AB_Update()
+ * tick after the request completes.
+ * The achievement list is cached after the first fetch; only user progress
+ * is re-queried on subsequent calls.
+ */
+void ab_achievement_query(ab_instance_t* instance, ab_achievements_callback_t on_done);
+
+/*
+ * Unlock a specific achievement for the logged-in user.
+ * on_done is called on the main thread via AB_Update() when the
+ * request completes (success or failure).
+ */
+void ab_achievement_unlock(
+    ab_instance_t* instance, const char* achievement_code, ab_unlock_achievement_callback_t on_done);
+
 #ifdef __cplusplus
 }
 #endif

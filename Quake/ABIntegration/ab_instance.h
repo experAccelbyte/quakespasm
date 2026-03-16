@@ -7,6 +7,7 @@
 #include "ab_p2p.h"
 #include "ab_ams.h"
 #include "ab_matchmaking.h"
+#include "ab_achievement.h"
 #include "ab_task_runner.h"
 
 #include <string>
@@ -41,6 +42,8 @@ public:
     const AB_AMS&         GetAMS() const;
     AB_Matchmaking&       GetMatchmaking();
     const AB_Matchmaking& GetMatchmaking() const;
+    AB_Achievement&       GetAchievement();
+    const AB_Achievement& GetAchievement() const;
 
     accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
 
@@ -54,6 +57,7 @@ private:
     AB_P2P         p2p_;
     AB_AMS         ams_;
     AB_Matchmaking matchmaking_;
+    AB_Achievement achievement_;
 
     std::string server_url_;
     std::string client_id_;
