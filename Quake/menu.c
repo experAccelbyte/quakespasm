@@ -286,6 +286,18 @@ int	m_main_cursor;
 #define	MAIN_ITEMS	5
 #endif
 
+#ifdef USE_ACCELBYTE_GAMESDK
+static void M_PrintScaled (int cx, int cy, const char *str, int scale)
+{
+	char	s[256];
+	int	i;
+
+	for (i = 0; str[i] && i < (int)sizeof(s)-1; i++)
+		s[i] = str[i] + 128;
+	s[i] = '\0';
+	Draw_StringScaled (cx, cy, s, scale);
+}
+#endif
 
 void M_Menu_Main_f (void)
 {
@@ -325,8 +337,8 @@ void M_Main_Draw (void)
 	M_DrawTransPic (54, 32 + m_main_cursor * 20,Draw_CachePic( va("gfx/menudot%i.lmp", f+1 ) ) );
 
 #ifdef USE_ACCELBYTE_GAMESDK
-	M_Print (72, 32 + 5*20, "Leaderboard");
-    M_Print(72, 32 + 6*20, "Achievements");
+	M_PrintScaled (72, 32 + 5*20, "Leaderboard", 2);
+	M_PrintScaled (72, 32 + 6*20, "Achievements", 2);
 #endif
 }
 
@@ -688,18 +700,7 @@ void M_Menu_MultiPlayer_f (void)
 }
 
 
-#ifdef USE_ACCELBYTE_GAMESDK
-static void M_PrintScaled (int cx, int cy, const char *str, int scale)
-{
-	char	s[256];
-	int	i;
 
-	for (i = 0; str[i] && i < (int)sizeof(s)-1; i++)
-		s[i] = str[i] + 128;
-	s[i] = '\0';
-	Draw_StringScaled (cx, cy, s, scale);
-}
-#endif
 
 void M_MultiPlayer_Draw (void)
 {
