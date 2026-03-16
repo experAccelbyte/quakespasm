@@ -274,6 +274,27 @@ void AB_P2P::Shutdown()
 
 void AB_P2P::Update()
 {
+	// Auto-join a client thread that exited naturally (e.g., remote P2P disconnect).
+	// Update() and Disconnect() both run on the main thread, so there is no race.
+	if (!client_running_ && client_connect_thread_.joinable())
+	{
+		client_connect_thread_.join();
+
+		SOCKET sock = p2p_sock(client_proxy_socket_);
+		if (sock != P2P_INVALID_SOCKET)
+		{
+			p2p_closesocket(sock);
+			client_proxy_socket_ = ~uintptr_t(0);
+		}
+		client_proxy_port_ = 0;
+		client_connection_.reset();
+
+		if (task_runner_)
+			task_runner_->queue_task([]() {
+				Con_Printf("ABP2P: Client P2P connection dropped (remote disconnect)\n");
+			});
+	}
+
 	// Clean up dead host proxies (connections that dropped).
 	std::lock_guard<std::mutex> lock(p2p_mutex_);
 	for (auto it = host_proxies_.begin(); it != host_proxies_.end(); )
@@ -581,6 +602,10 @@ void AB_P2P::ClientProxyThreadBody()
 			}
 			did_work = true;
 		}
+		else if (!client_connection_->is_connected())
+		{
+			break; // remote side dropped — exit proxy loop
+		}
 
 		// UDP -> P2P: read from Quake client, frame and forward to host
 		struct sockaddr_in from_addr;
@@ -616,6 +641,24 @@ void AB_P2P::ConnectToHost(const char* peer_id)
 		Con_Printf("ABP2P: Client already connecting/connected\n");
 		return;
 	}
+
+	// Join and release any previous connection that ended naturally (remote disconnect).
+	// This must happen here — we cannot rely on Update() having run since the last
+	// disconnect.  Assigning to a joinable std::thread calls std::terminate(), so this
+	// join is safety-critical, not just a cleanup nicety.
+	if (client_connect_thread_.joinable())
+		client_connect_thread_.join();
+
+	{
+		SOCKET old_sock = p2p_sock(client_proxy_socket_);
+		if (old_sock != P2P_INVALID_SOCKET)
+		{
+			p2p_closesocket(old_sock);
+			client_proxy_socket_ = ~uintptr_t(0);
+		}
+	}
+	client_proxy_port_ = 0;
+	client_connection_.reset();
 
 	accelbyte::memory::SharedPtr<accelbyte::user::User>             user;
 	accelbyte::memory::SharedPtr<accelbyte::lobby::LobbyConnection> lobby_conn;
@@ -707,6 +750,11 @@ void AB_P2P::ConnectToHost(const char* peer_id)
 
 		client_connected_ = true;
 		ClientProxyThreadBody();
+
+		// Proxy exited (remote disconnect or explicit Disconnect()).
+		// Clear flags so Update() can join and ConnectToHost() can proceed.
+		client_running_   = false;
+		client_connected_ = false;
 	});
 }
 
