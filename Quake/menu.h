@@ -41,7 +41,8 @@ enum m_state_e {
 	m_gameoptions,
 	m_search,
 	m_slist,
-	m_leaderboard
+	m_leaderboard,
+    m_achievements
 };
 
 extern enum m_state_e m_state;

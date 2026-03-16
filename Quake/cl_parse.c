@@ -27,6 +27,26 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "ABIntegration/ab_integration.h"
 extern ab_instance_t* g_ab_instance;
 
+#ifdef USE_ACCELBYTE_GAMESDK
+static void OnFirstFragUnlocked(int success, const char* error_message)
+{
+    if (success)
+        Con_Printf("Achievement unlocked: First Frag!\n");
+    else
+        Con_Printf("Failed to unlock achievement: %s\n", error_message);
+}
+
+static void OnFlawlessWinUnlocked(int success, const char* error_message)
+{
+    if (success)
+        Con_Printf("Achievement unlocked: Flawless Win!\n");
+    else
+        Con_Printf("Failed to unlock achievement: %s\n", error_message);
+}
+
+static qboolean ab_health_reduced = false;
+#endif
+
 const char *svc_strings[] =
 {
 	"svc_bad",
@@ -301,6 +321,11 @@ void CL_ParseServerInfo (void)
 // wipe the client_state_t struct
 //
 	CL_ClearState ();
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	// Reset health reduced flag at the start of level.
+    ab_health_reduced = false;
+#endif
 
 // parse protocol version number
 	i = MSG_ReadLong ();
@@ -787,6 +812,11 @@ void CL_ParseClientdata (void)
 	i = MSG_ReadShort ();
 	if (cl.stats[STAT_HEALTH] != i)
 	{
+#ifdef USE_ACCELBYTE_GAMESDK
+        if (i < cl.stats[STAT_HEALTH] && i > 0)
+			// Health decrease, flag it.
+            ab_health_reduced = true;
+#endif
 		cl.stats[STAT_HEALTH] = i;
 		Sbar_Changed ();
 	}
@@ -1238,6 +1268,11 @@ void CL_ParseServerMessage (void)
 			if (!cls.demoplayback) {
 				ab_update_user_stat(g_ab_instance, "qmonsterkill", 1.0f, 1);
 			}
+
+#ifdef USE_ACCELBYTE_GAMESDK
+            // First monster kill achievement.
+            ab_achievement_unlock(g_ab_instance, "first-frag", OnFirstFragUnlocked);
+#endif
 			break;
 
 		case svc_foundsecret:
@@ -1269,6 +1304,13 @@ void CL_ParseServerMessage (void)
 			cl.completed_time = cl.time;
 			vid.recalc_refdef = true;	// go to full screen
 			V_RestoreAngles ();
+
+#ifdef USE_ACCELBYTE_GAMESDK
+            if (!ab_health_reduced)
+				// Achievement: finish a level without taking damange
+                ab_achievement_unlock(g_ab_instance, "flawless-win", OnFlawlessWinUnlocked);
+#endif
+
 			break;
 
 		case svc_finale:
@@ -1281,6 +1323,13 @@ void CL_ParseServerMessage (void)
 			Con_LogCenterPrint (str);
 			//johnfitz
 			V_RestoreAngles ();
+
+#ifdef USE_ACCELBYTE_GAMESDK
+            if (!ab_health_reduced)
+                // Achievement: finish a level without taking damange
+                ab_achievement_unlock(g_ab_instance, "flawless-win", OnFlawlessWinUnlocked);
+#endif
+
 			break;
 
 		case svc_cutscene:

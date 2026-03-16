@@ -13,6 +13,7 @@ ABInstance::ABInstance()
     statistic_.SetTaskRunner(task_runner_);
     cycle_.SetTaskRunner(task_runner_);
     leaderboard_.SetTaskRunner(task_runner_);
+    achievement_.SetTaskRunner(task_runner_);
 }
 
 void ABInstance::SetServerUrl   (const char* url)    { server_url_    = url    ? url    : ""; }
@@ -37,6 +38,8 @@ AB_Cycle&           ABInstance::GetCycle()               { return cycle_; }
 const AB_Cycle&     ABInstance::GetCycle() const         { return cycle_; }
 AB_Leaderboard&       ABInstance::GetLeaderboard()       { return leaderboard_; }
 const AB_Leaderboard& ABInstance::GetLeaderboard() const { return leaderboard_; }
+AB_Achievement&       ABInstance::GetAchievement()       { return achievement_; }
+const AB_Achievement& ABInstance::GetAchievement() const { return achievement_; }
 
 accelbyte::memory::SharedPtr<accelbyte::user::User> ABInstance::GetCurrentUser() const
 {

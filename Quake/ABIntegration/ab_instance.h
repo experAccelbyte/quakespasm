@@ -4,6 +4,7 @@
 #include "ab_statistic.h"
 #include "ab_cycle.h"
 #include "ab_leaderboard.h"
+#include "ab_achievement.h"
 #include "ab_task_runner.h"
 
 #include <string>
@@ -32,6 +33,8 @@ public:
     const AB_Cycle&       GetCycle() const;
     AB_Leaderboard&       GetLeaderboard();
     const AB_Leaderboard& GetLeaderboard() const;
+    AB_Achievement&       GetAchievement();
+    const AB_Achievement& GetAchievement() const;
 
     accelbyte::memory::SharedPtr<accelbyte::user::User> GetCurrentUser() const;
 
@@ -42,6 +45,7 @@ private:
     AB_Statistic   statistic_;
     AB_Cycle       cycle_;
     AB_Leaderboard leaderboard_;
+    AB_Achievement achievement_;
 
     std::string server_url_;
     std::string client_id_;
