@@ -188,4 +188,24 @@ void ab_update_user_stat(ab_instance_t* instance, const char* stat_code, float v
     ab_stat_update(instance, stat_code, value, (ab_stat_strategy_t)strategy);
 }
 
+/* -----------------------------------------------------------------------
+ * Achievement API
+ * ----------------------------------------------------------------------- */
+
+
+void ab_achievement_query(ab_instance_t* instance, ab_achievements_callback_t on_done)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetAchievement().QueryAchievements(
+        inst->GetCurrentUser(), inst->GetLogin().GetUserId(), on_done);
+}
+
+void ab_achievement_unlock(
+    ab_instance_t* instance, const char* achievement_code, ab_unlock_achievement_callback_t on_done)
+{
+    ABInstance* inst = cast(instance);
+    inst->GetAchievement().UnlockAchievement(
+        inst->GetCurrentUser(), inst->GetLogin().GetUserId(), achievement_code, on_done);
+}
+
 } // extern "C"
