@@ -3272,7 +3272,7 @@ void M_Achievements_Draw(void)
     char line[48];
     const ab_achievement_t* a;
 
-    M_DrawTextBox(0, 0, 38, 12);
+    M_DrawTextBox(0, 0, 38, 13);
     M_PrintWhite(72, 8, "Achievements");
 
     if (s_achievements_loading && s_achievement_count == 0) {
