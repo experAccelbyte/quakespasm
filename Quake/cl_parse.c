@@ -44,6 +44,22 @@ static void OnFlawlessWinUnlocked(int success, const char* error_message)
         Con_Printf("Failed to unlock achievement: %s\n", error_message);
 }
 
+static void OnFirstPlayerKillUnlocked(int success, const char* error_message)
+{
+    if (success)
+        Con_Printf("Achievement unlocked: First Blood!\n");
+    else
+        Con_Printf("Failed to unlock achievement: %s\n", error_message);
+}
+
+static void OnMultiplayerConnectedUnlocked(int success, const char* error_message)
+{
+    if (success)
+        Con_Printf("Achievement unlocked: Connected!\n");
+    else
+        Con_Printf("Failed to unlock achievement: %s\n", error_message);
+}
+
 static qboolean ab_health_reduced = false;
 #endif
 
@@ -361,6 +377,12 @@ void CL_ParseServerInfo (void)
 		Host_Error ("Bad maxclients (%u) from server", cl.maxclients);
 	}
 	cl.scores = (scoreboard_t *) Hunk_AllocName (cl.maxclients*sizeof(*cl.scores), "scores");
+
+#ifdef USE_ACCELBYTE_GAMESDK
+	if (cl.maxclients > 1)
+        // Achievement: connected to a multiplayer game
+		ab_achievement_unlock(g_ab_instance, "connected", OnMultiplayerConnectedUnlocked);
+#endif
 
 // parse gametype
 	cl.gametype = MSG_ReadByte ();
@@ -1203,6 +1225,11 @@ void CL_ParseServerMessage (void)
 					&& new_frags > cl.scores[i].frags)
 				{
 					ab_update_user_stat(g_ab_instance, "qfrag", 1.0f, 1);
+#ifdef USE_ACCELBYTE_GAMESDK
+					// Achievement: kill player
+					if (cl.maxclients > 1)
+						ab_achievement_unlock(g_ab_instance, "first-blood", OnFirstPlayerKillUnlocked);
+#endif
 				}
 				cl.scores[i].frags = new_frags;
 			}
