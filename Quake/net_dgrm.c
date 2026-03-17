@@ -1024,10 +1024,10 @@ static qsocket_t *_Datagram_CheckNewConnections (void)
 		if (s->driver != net_driverlevel)
 			continue;
 		ret = dfunc.AddrCompare(&clientaddr, &s->addr);
-		if (ret >= 0)
+		if (ret == 0)
 		{
-			// is this a duplicate connection reqeust?
-			if (ret == 0 && net_time - s->connecttime < 2.0)
+			// is this a duplicate connection request?
+			if (net_time - s->connecttime < 2.0)
 			{
 				// yes, so send a duplicate reply
 				SZ_Clear(&net_message);
